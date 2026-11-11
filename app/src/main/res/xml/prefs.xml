@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="Сцена">
+        <ListPreference android:key="scene" android:title="Стиль фигур" android:defaultValue="fusilli"
+            android:entries="@array/scene_names" android:entryValues="@array/scene_values"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="Картинка">
+        <SeekBarPreference android:key="cols" android:title="Плотность (символов по ширине)"
+            android:defaultValue="100" android:max="200" app:min="40" app:seekBarIncrement="5" app:showSeekBarValue="true" />
+        <ListPreference android:key="chars" android:title="Набор символов" android:defaultValue="classic"
+            android:entries="@array/chars_names" android:entryValues="@array/chars_values"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference android:key="color" android:title="Цвет символов" android:defaultValue="#F2FFF2"
+            android:entries="@array/color_names" android:entryValues="@array/color_values"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference android:key="bg" android:title="Фон" android:defaultValue="#000000"
+            android:entries="@array/bg_names" android:entryValues="@array/bg_values"
+            app:useSimpleSummaryProvider="true" />
+        <SeekBarPreference android:key="thick" android:title="Толщина линий"
+            android:defaultValue="1" android:max="3" app:min="1" app:showSeekBarValue="true" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="Движение">
+        <SeekBarPreference android:key="speed" android:title="Скорость вращения (°/с)"
+            android:defaultValue="15" android:max="90" app:min="0" app:showSeekBarValue="true" />
+        <ListPreference android:key="fps" android:title="Частота кадров" android:defaultValue="60"
+            android:entries="@array/fps_values" android:entryValues="@array/fps_values"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat android:key="tilt" android:title="Параллакс от наклона телефона"
+            android:summary="Сцена слегка поворачивается вслед за наклоном" android:defaultValue="false" />
+        <SwitchPreferenceCompat android:key="touch" android:title="Реакция на касание"
+            android:summary="Тап даёт импульс вращения (если лаунчер передаёт касания)" android:defaultValue="true" />
+        <SwitchPreferenceCompat android:key="unlock" android:title="Анимация при разблокировке"
+            android:summary="Короткий оборот и «выезд» сцены" android:defaultValue="true" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="Батарея">
+        <SwitchPreferenceCompat android:key="saver" android:title="Умная экономия"
+            android:summary="30 FPS при режиме энергосбережения или заряде ≤ 15%" android:defaultValue="true" />
+    </PreferenceCategory>
+</PreferenceScreen>
