@@ -2,26 +2,30 @@ package dev.ascii.live
 
 import android.content.SharedPreferences
 import android.graphics.Color
-import android.opengl.*
+import android.opengl.EGL14
+import android.opengl.EGLConfig
+import android.opengl.EGLContext
+import android.opengl.EGLDisplay
+import android.opengl.EGLSurface
+import android.opengl.GLES20
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
 import androidx.preference.PreferenceManager
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 class AsciiWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = OpenGlEngine()
 
-    private inner class OpenGlEngine : Engine(), GLSurfaceView.Renderer, SharedPreferences.OnSharedPreferenceChangeListener {
+    private inner class OpenGlEngine : Engine(), SharedPreferences.OnSharedPreferenceChangeListener {
         private val prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
         private var config = Config.load(applicationContext)
         
-        private var eglDisplay = EGL14.EGL_NO_DISPLAY
-        private var eglContext = EGL14.EGL_NO_CONTEXT
-        private var eglSurface = EGL14.EGL_NO_SURFACE
+        private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
+        private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
+        private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
 
         private var program = 0
         private var fontTextureId = 0
@@ -197,15 +201,26 @@ class AsciiWallpaperService : WallpaperService() {
         override fun onSurfaceCreated(holder: SurfaceHolder) {
             super.onSurfaceCreated(holder)
             initEgl(holder)
-            onSurfaceCreated(null, null)
-            onSurfaceChanged(holder, 0, holder.surfaceFrame.width(), holder.surfaceFrame.height())
+            initGl()
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             super.onSurfaceChanged(holder, format, width, height)
             w = width
             h = height
-            onSurfaceChanged(null, w, h)
+            GLES20.glViewport(0, 0, w, h)
+        }
+
+        override fun onVisibilityChanged(visible: Boolean) {
+            super.onVisibilityChanged(visible)
+            if (visible) {
+                drawFrame()
+            }
+        }
+
+        override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
+            super.onSurfaceRedrawNeeded(holder)
+            drawFrame()
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
@@ -250,89 +265,4 @@ class AsciiWallpaperService : WallpaperService() {
             }
             eglDisplay = EGL14.EGL_NO_DISPLAY
             eglContext = EGL14.EGL_NO_CONTEXT
-            eglSurface = EGL14.EGL_NO_SURFACE
-        }
-
-        override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-            val vShader = loadShader(GLES20.GL_VERTEX_SHADER, vertCode)
-            val fShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragCode)
-
-            program = GLES20.glCreateProgram().also {
-                GLES20.glAttachShader(it, vShader)
-                GLES20.glAttachShader(it, fShader)
-                GLES20.glLinkProgram(it)
-            }
-
-            fontTextureId = FontTexture.create(this.config.ramp)
-
-            aPosLoc = GLES20.glGetAttribLocation(program, "a_position")
-            uResLoc = GLES20.glGetUniformLocation(program, "u_resolution")
-            uTimeLoc = GLES20.glGetUniformLocation(program, "u_time")
-            uColorLoc = GLES20.glGetUniformLocation(program, "u_color")
-            uColsLoc = GLES20.glGetUniformLocation(program, "u_cols")
-            uCharCountLoc = GLES20.glGetUniformLocation(program, "u_charCount")
-            uSceneLoc = GLES20.glGetUniformLocation(program, "u_scene")
-        }
-
-        override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-            w = width
-            h = height
-            GLES20.glViewport(0, 0, w, h)
-        }
-
-        override fun onDrawFrame(gl: GL10?) {
-            if (w <= 0 || h <= 0 || eglSurface == EGL14.EGL_NO_SURFACE) return
-
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-            GLES20.glUseProgram(program)
-
-            val time = (System.currentTimeMillis() - startTime) / 1000f
-            val cInt = config.getEffectiveColor(applicationContext)
-
-            val red = Color.red(cInt) / 255f
-            val green = Color.green(cInt) / 255f
-            val blue = Color.blue(cInt) / 255f
-
-            val sceneId = when (config.scene) {
-                "cubes" -> 1
-                "bigcube" -> 2
-                "dna" -> 3
-                "blackhole" -> 4
-                "matrix" -> 5
-                else -> 0
-            }
-
-            GLES20.glUniform2f(uResLoc, w.toFloat(), h.toFloat())
-            GLES20.glUniform1f(uTimeLoc, time)
-            GLES20.glUniform3f(uColorLoc, red, green, blue)
-            GLES20.glUniform1f(uColsLoc, config.cols.toFloat())
-            GLES20.glUniform1f(uCharCountLoc, config.ramp.length.toFloat())
-            GLES20.glUniform1i(uSceneLoc, sceneId)
-
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fontTextureId)
-
-            GLES20.glEnableVertexAttribArray(aPosLoc)
-            GLES20.glVertexAttribPointer(aPosLoc, 2, GLES20.GL_FLOAT, false, 0, quadBuffer)
-
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-            GLES20.glDisableVertexAttribArray(aPosLoc)
-
-            EGL14.eglSwapBuffers(eglDisplay, eglSurface)
-            
-            // Запрос следующего кадра для непрерывной плавной анимации
-            if (isVisible) {
-                // Принудительно дергаем перерисовку через хук
-                val holder = surfaceHolder
-                holder.lockCanvas()?.let { holder.unlockCanvasAndPost(it) }
-            }
-        }
-
-        private fun loadShader(type: Int, code: String): Int {
-            val shader = GLES20.glCreateShader(type)
-            GLES20.glShaderSource(shader, code)
-            GLES20.glCompileShader(shader)
-            return shader
-        }
-    }
-}
+            eglSurface = EGL14.EGL_NO_SUR
