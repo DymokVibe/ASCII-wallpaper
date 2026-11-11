@@ -5,9 +5,8 @@ import kotlin.math.*
 private const val TAU = 6.2831855f
 
 object Scenes {
-    val names = arrayOf("fusilli", "cubes", "bigcube", "dna", "blackhole")
-    /** Половина «полезной» ширины сцены в единицах мира — по ней считается масштаб. */
-    val extent = floatArrayOf(2.0f, 1.7f, 2.4f, 2.0f, 5.4f)
+    val names = arrayOf("fusilli", "cubes", "bigcube", "dna", "blackhole", "matrix")
+    val extent = floatArrayOf(2.0f, 1.7f, 2.4f, 2.0f, 5.4f, 2.0f)
 
     fun draw(i: Int, r: Raster, a: Float) {
         when (i) {
@@ -15,10 +14,10 @@ object Scenes {
             1 -> cubes(r, a)
             2 -> { r.setRot(0f, 0f, 0f); cube(r, 0f, 0f, 0f, 1.3f, a, a * 0.6f) }
             3 -> dna(r, a)
-            else -> blackHole(r, a)
+            4 -> blackHole(r, a)
+            else -> matrixRain(r, a)
         }
     }
-
     // ---------- Макароны: две спиральные «трубки», точки с нормалями считаются один раз ----------
     private val fus: FloatArray by lazy {
         val rods = 2; val n = 260; val m = 14
@@ -156,4 +155,37 @@ object Scenes {
          k += 4
      }
  }
+
+private fun matrixRain(r: Raster, a: Float) {
+        r.setRot(0f, 0f, 0f, false)
+        val cols = r.cols
+        val rows = r.rows
+        if (cols <= 0 || rows <= 0) return
+
+        val midX = cols / 2f
+        val midY = rows / 2f
+        val invScaleX = 1f / (r.scale)
+        val invScaleY = 1f / (r.scale * r.aspect)
+
+        for (x in 0 until cols) {
+            // Псевдослучайный хэш для каждой колонки
+            val seed = (x * 12.9898f).toBits() and 0x7FFFFFFF
+            val rnd1 = (seed % 1000) / 1000f
+            val rnd2 = ((seed / 1000) % 1000) / 1000f
+
+            val speed = 6f + rnd1 * 14f
+            val tailLen = 7f + rnd2 * 12f
+            val headY = ((a * speed + rnd1 * 100f) % (rows + tailLen * 2)) - tailLen
+
+            for (yStep in 0 until tailLen.toInt()) {
+                val iy = (headY - yStep).toInt()
+                if (iy in 0 until rows) {
+                    val lum = if (yStep == 0) 1.0f else (1.0f - yStep / tailLen).pow(1.4f) * 0.8f
+                    val rx = (x - midX) * invScaleX
+                    val ry = (midY - iy) * invScaleY
+                    r.pt(rx, ry, 0f, lum)
+                }
+            }
+        }
+    }
 }
