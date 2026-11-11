@@ -89,7 +89,7 @@ class AsciiSession(private val ctx: Context) {
         r.scale = min(cfg.cols * 0.5f, rows * 0.5f / aspect) / Scenes.extent[idx] * (1f + 0.35f * (1f - ease))
         Scenes.draw(idx, r, ang)
     
-        paint.color = cfg.color
+        paint.color = cfg.getEffectiveColor(ctx)
         val ramp = cfg.ramp
         val n = ramp.length
         val maxRampIdx = n - 2
