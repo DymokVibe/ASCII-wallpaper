@@ -27,7 +27,11 @@ data class Config(
             "cyberpunk" -> Color.parseColor("#00E5FF")
             "amber" -> Color.parseColor("#FFB000")
             "monet" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                ctx.getColor(android.R.color.system_accent1_300)
+                try {
+                    ctx.getColor(android.R.color.system_accent1_300)
+                } catch (e: Exception) {
+                    Color.parseColor("#00FF66")
+                }
             } else {
                 Color.parseColor("#00FF66")
             }
@@ -79,7 +83,7 @@ data class Config(
             return Config(
                 scene = try { p.getString("scene", "fusilli") ?: "fusilli" } catch (e: Exception) { "fusilli" },
                 cols = getIntSafe(p, "cols", 80),
-                fps = getIntSafe(p, "fps", 30),
+                fps = getIntSafe(p, "fps", 60),
                 speed = getFloatSafe(p, "speed", 15f),
                 thick = getIntSafe(p, "thick", 1),
                 colorPreset = try { p.getString("color_preset", "matrix") ?: "matrix" } catch (e: Exception) { "matrix" },
