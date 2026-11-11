@@ -265,4 +265,76 @@ class AsciiWallpaperService : WallpaperService() {
             }
             eglDisplay = EGL14.EGL_NO_DISPLAY
             eglContext = EGL14.EGL_NO_CONTEXT
-            eglSurface = EGL14.EGL_NO_SUR
+            eglSurface = EGL14.EGL_NO_SURFACE
+        }
+
+        private fun initGl() {
+            val vShader = loadShader(GLES20.GL_VERTEX_SHADER, vertCode)
+            val fShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragCode)
+
+            program = GLES20.glCreateProgram().also {
+                GLES20.glAttachShader(it, vShader)
+                GLES20.glAttachShader(it, fShader)
+                GLES20.glLinkProgram(it)
+            }
+
+            fontTextureId = FontTexture.create(config.ramp)
+
+            aPosLoc = GLES20.glGetAttribLocation(program, "a_position")
+            uResLoc = GLES20.glGetUniformLocation(program, "u_resolution")
+            uTimeLoc = GLES20.glGetUniformLocation(program, "u_time")
+            uColorLoc = GLES20.glGetUniformLocation(program, "u_color")
+            uColsLoc = GLES20.glGetUniformLocation(program, "u_cols")
+            uCharCountLoc = GLES20.glGetUniformLocation(program, "u_charCount")
+            uSceneLoc = GLES20.glGetUniformLocation(program, "u_scene")
+        }
+
+        private fun drawFrame() {
+            if (w <= 0 || h <= 0 || eglSurface == EGL14.EGL_NO_SURFACE) return
+
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+            GLES20.glUseProgram(program)
+
+            val time = (System.currentTimeMillis() - startTime) / 1000f
+            val cInt = config.getEffectiveColor(applicationContext)
+
+            val red = Color.red(cInt) / 255f
+            val green = Color.green(cInt) / 255f
+            val blue = Color.blue(cInt) / 255f
+
+            val sceneId = when (config.scene) {
+                "cubes" -> 1
+                "bigcube" -> 2
+                "dna" -> 3
+                "blackhole" -> 4
+                "matrix" -> 5
+                else -> 0
+            }
+
+            GLES20.glUniform2f(uResLoc, w.toFloat(), h.toFloat())
+            GLES20.glUniform1f(uTimeLoc, time)
+            GLES20.glUniform3f(uColorLoc, red, green, blue)
+            GLES20.glUniform1f(uColsLoc, config.cols.toFloat())
+            GLES20.glUniform1f(uCharCountLoc, config.ramp.length.toFloat())
+            GLES20.glUniform1i(uSceneLoc, sceneId)
+
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fontTextureId)
+
+            GLES20.glEnableVertexAttribArray(aPosLoc)
+            GLES20.glVertexAttribPointer(aPosLoc, 2, GLES20.GL_FLOAT, false, 0, quadBuffer)
+
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            GLES20.glDisableVertexAttribArray(aPosLoc)
+
+            EGL14.eglSwapBuffers(eglDisplay, eglSurface)
+        }
+
+        private fun loadShader(type: Int, code: String): Int {
+            val shader = GLES20.glCreateShader(type)
+            GLES20.glShaderSource(shader, code)
+            GLES20.glCompileShader(shader)
+            return shader
+        }
+    }
+}
