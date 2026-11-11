@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Сцены -->
     <string-array name="scene_entries">
+        <item>Fusilli</item>
+        <item>Cubes</item>
+        <item>Big Cube</item>
+        <item>DNA</item>
+        <item>Black Hole</item>
+        <item>Matrix Rain</item>
+    </string-array>
+    <string-array name="scene_names">
         <item>Fusilli</item>
         <item>Cubes</item>
         <item>Big Cube</item>
@@ -17,6 +26,19 @@
         <item>matrix</item>
     </string-array>
 
+    <!-- Символы -->
+    <string-array name="chars_names">
+        <item>Classic ( .:-=+*#%@)</item>
+        <item>Minimal ( .:-=+#@)</item>
+        <item>Dense ( .'`^":;Il!i><~+_-?][}{1)(|\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&amp;8%B@$)</item>
+    </string-array>
+    <string-array name="chars_values">
+        <item>classic</item>
+        <item>minimal</item>
+        <item>dense</item>
+    </string-array>
+
+    <!-- Пресеты цвета -->
     <string-array name="color_preset_entries">
         <item>Matrix Green</item>
         <item>Cyberpunk Cyan</item>
@@ -30,5 +52,37 @@
         <item>amber</item>
         <item>monet</item>
         <item>custom</item>
+    </string-array>
+
+    <!-- Кастомные цвета -->
+    <string-array name="color_names">
+        <item>Зеленый</item>
+        <item>Бирюзовый</item>
+        <item>Янтарный</item>
+        <item>Белый</item>
+    </string-array>
+    <string-array name="color_values">
+        <item>#00FF66</item>
+        <item>#00E5FF</item>
+        <item>#FFB000</item>
+        <item>#F2FFF2</item>
+    </string-array>
+
+    <!-- Фон -->
+    <string-array name="bg_names">
+        <item>Черный</item>
+        <item>Темно-синий</item>
+    </string-array>
+    <string-array name="bg_values">
+        <item>#000000</item>
+        <item>#050B14</item>
+    </string-array>
+
+    <!-- FPS -->
+    <string-array name="fps_values">
+        <item>30</item>
+        <item>60</item>
+        <item>90</item>
+        <item>120</item>
     </string-array>
 </resources>
