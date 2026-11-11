@@ -1,30 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="scene_names">
-        <item>Макароны (Fusilli)</item><item>Кубы</item><item>Большой куб</item>
-        <item>ДНК</item><item>Чёрная дыра</item><item>Все по кругу (20 с)</item>
+    <string-array name="scene_entries">
+        <item>Fusilli</item>
+        <item>Cubes</item>
+        <item>Big Cube</item>
+        <item>DNA</item>
+        <item>Black Hole</item>
+        <item>Matrix Rain</item>
     </string-array>
     <string-array name="scene_values">
-        <item>fusilli</item><item>cubes</item><item>bigcube</item><item>dna</item><item>blackhole</item><item>cycle</item>
+        <item>fusilli</item>
+        <item>cubes</item>
+        <item>bigcube</item>
+        <item>dna</item>
+        <item>blackhole</item>
+        <item>matrix</item>
     </string-array>
-    <string-array name="chars_names">
-        <item>Классика  .:-=+*#%@</item><item>Подробный (70 символов)</item><item>Бинарный 0/1</item><item>Минимал  .:*#</item>
+
+    <string-array name="color_preset_entries">
+        <item>Matrix Green</item>
+        <item>Cyberpunk Cyan</item>
+        <item>Amber Terminal</item>
+        <item>Monet (Dynamic Accent)</item>
+        <item>Custom Color</item>
     </string-array>
-    <string-array name="chars_values">
-        <item>classic</item><item>dense</item><item>binary</item><item>minimal</item>
-    </string-array>
-    <string-array name="color_names">
-        <item>Белый</item><item>Зелёный</item><item>Янтарный</item><item>Циан</item><item>Розовый</item><item>Фиолетовый</item>
-    </string-array>
-    <string-array name="color_values">
-        <item>#F2FFF2</item><item>#6BFF7A</item><item>#FFAA33</item><item>#33E0FF</item><item>#FF5FA2</item><item>#B388FF</item>
-    </string-array>
-    <string-array name="bg_names">
-        <item>Чёрный (AMOLED)</item><item>Тёмно-зелёный</item><item>Тёмно-синий</item>
-    </string-array>
-    <string-array name="bg_values">
-        <item>#000000</item><item>#050D08</item><item>#02060F</item>
-    </string-array>
-    <string-array name="fps_values">
-        <item>30</item><item>45</item><item>60</item><item>90</item><item>120</item>
+    <string-array name="color_preset_values">
+        <item>matrix</item>
+        <item>cyberpunk</item>
+        <item>amber</item>
+        <item>monet</item>
+        <item>custom</item>
     </string-array>
 </resources>
