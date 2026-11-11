@@ -68,41 +68,89 @@ class AsciiWallpaperService : WallpaperService() {
             uniform float u_charCount;
             uniform int u_scene;
 
+            mat2 rot(float a) {
+                float s = sin(a), c = cos(a);
+                return mat2(c, -s, s, c);
+            }
+
+            float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+            float sdBox(vec3 p, vec3 b) {
+                vec3 q = abs(p) - b;
+                return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+            }
+
+            float mapScene(vec3 p, float time, int scene) {
+                if (scene == 1) { // Cubes Grid
+                    vec3 q = p;
+                    q.xz *= rot(time * 0.6);
+                    q.xy *= rot(time * 0.4);
+                    q = mod(q + 1.2, 2.4) - 1.2;
+                    return sdBox(q, vec3(0.45));
+                } else if (scene == 2) { // Big Cube
+                    vec3 q = p;
+                    q.xz *= rot(time * 0.7);
+                    q.xy *= rot(time * 0.5);
+                    return sdBox(q, vec3(0.85));
+                } else if (scene == 3) { // 3D DNA Helix
+                    vec3 q = p;
+                    q.xz *= rot(q.y * 1.8 + time * 2.0);
+                    float d1 = length(q.xz - vec2(0.55, 0.0)) - 0.16;
+                    float d2 = length(q.xz + vec2(0.55, 0.0)) - 0.16;
+                    float rbar = length(vec2(q.x, mod(q.y + 0.1, 0.4) - 0.2)) - 0.05;
+                    float bars = max(rbar, abs(q.z) - 0.55);
+                    return min(min(d1, d2), bars);
+                } else if (scene == 4) { // 3D Black Hole Accretion Disk
+                    float r = length(p.xz);
+                    float disk = length(vec2(r - 1.2, p.y)) - 0.08;
+                    float hole = length(p) - 0.55;
+                    return max(-hole, disk);
+                } else { // Fusilli Spiral
+                    vec3 q = p;
+                    q.xz *= rot(q.y * 2.2 + time * 2.5);
+                    return length(q.xz - vec2(0.5, 0.0)) - 0.18;
+                }
+            }
+
+            vec3 calcNormal(vec3 p, float time, int scene) {
+                vec2 e = vec2(0.003, 0.0);
+                return normalize(vec3(
+                    mapScene(p + e.xyy, time, scene) - mapScene(p - e.xyy, time, scene),
+                    mapScene(p + e.yxy, time, scene) - mapScene(p - e.yxy, time, scene),
+                    mapScene(p + e.yyx, time, scene) - mapScene(p - e.yyx, time, scene)
+                ));
+            }
+
+            float renderRaymarch(vec2 p, float time, int scene) {
+                vec3 ro = vec3(0.0, 0.0, -3.2);
+                vec3 rd = normalize(vec3(p, 1.8));
+
+                float t = 0.0;
+                for (int i = 0; i < 48; i++) {
+                    vec3 pos = ro + rd * t;
+                    float d = mapScene(pos, time, scene);
+                    if (d < 0.005) {
+                        vec3 n = calcNormal(pos, time, scene);
+                        vec3 lightDir = normalize(vec3(0.5, 0.8, -1.0));
+                        float diff = max(dot(n, lightDir), 0.15);
+                        float spec = pow(max(dot(reflect(-lightDir, n), -rd), 0.0), 16.0);
+                        float occ = exp(-t * 0.25);
+                        return clamp((diff + spec * 0.6) * occ, 0.0, 1.0);
+                    }
+                    if (t > 7.0) break;
+                    t += d * 0.75;
+                }
+                return 0.0;
+            }
+
             float sceneMatrix(vec2 cell, vec2 grid, float time) {
                 float col = cell.x;
-                float speed = fract(sin(col * 12.9898) * 43758.5453) * 1.5 + 0.8;
-                float drop = fract(cell.y / grid.y + time * speed * 0.2 + sin(col));
-                return smoothstep(0.0, 1.0, drop) * step(0.05, drop);
-            }
-
-            float sceneBlackHole(vec2 p, float time) {
-                float r = length(p);
-                float a = atan(p.y, p.x);
-                float disk = sin(1.0 / (r + 0.08) * 6.0 - time * 3.0 + a * 2.0);
-                float lum = smoothstep(0.1, 0.95, disk) * exp(-r * 0.7);
-                if (r < 0.22) lum = 0.0;
-                return lum;
-            }
-
-            float sceneFusilli(vec2 p, float time) {
-                float a = atan(p.y, p.x);
-                float r = length(p);
-                float wave = sin(r * 10.0 - time * 4.0 + a * 3.0);
-                return smoothstep(0.2, 0.85, wave) * exp(-r * 0.5);
-            }
-
-            float sceneDNA(vec2 p, float time) {
-                float y = p.y * 4.0;
-                float s1 = sin(y + time * 2.5) * 0.45;
-                float s2 = sin(y + time * 2.5 + 3.14159) * 0.45;
-                float d1 = exp(-pow(p.x - s1, 2.0) * 35.0);
-                float d2 = exp(-pow(p.x - s2, 2.0) * 35.0);
-                return max(d1, d2);
-            }
-
-            float sceneCubes(vec2 p, float time) {
-                vec2 q = abs(fract(p * 2.5 + vec2(sin(time * 0.8), cos(time * 0.8))) - 0.5);
-                return step(max(q.x, q.y), 0.38) * 0.8;
+                float rng = hash(col * 127.1);
+                float speed = 0.4 + rng * 0.8;
+                float drop = fract(cell.y / grid.y + time * speed * 0.25 + rng);
+                float head = smoothstep(0.88, 1.0, drop);
+                float tail = smoothstep(0.0, 0.88, drop) * drop;
+                return tail + head * 1.8;
             }
 
             void main() {
@@ -117,17 +165,13 @@ class AsciiWallpaperService : WallpaperService() {
                 float lum = 0.0;
                 if (u_scene == 5) {
                     lum = sceneMatrix(cell, grid, u_time);
-                } else if (u_scene == 4) {
-                    lum = sceneBlackHole(p, u_time);
-                } else if (u_scene == 3) {
-                    lum = sceneDNA(p, u_time);
-                } else if (u_scene == 2 || u_scene == 1) {
-                    lum = sceneCubes(p, u_time);
                 } else {
-                    lum = sceneFusilli(p, u_time);
+                    lum = renderRaymarch(p, u_time, u_scene);
                 }
 
-                float charIdx = floor(clamp(lum, 0.0, 0.99) * u_charCount);
+                float charRng = hash(cell.x * 31.0 + cell.y * 17.0 + floor(u_time * 8.0));
+                float charIdx = floor(clamp(lum > 0.02 ? (u_scene == 5 ? charRng : lum) : 0.0, 0.0, 0.99) * u_charCount);
+
                 vec2 fontUv = vec2((cellUv.x + charIdx) / u_charCount, cellUv.y);
                 float charAlpha = texture2D(u_fontTexture, fontUv).a;
 
@@ -196,6 +240,7 @@ class AsciiWallpaperService : WallpaperService() {
 
             val time = (System.currentTimeMillis() - startTime) / 1000f
             val cInt = config.getEffectiveColor(app)
+
             val red = Color.red(cInt) / 255f
             val green = Color.green(cInt) / 255f
             val blue = Color.blue(cInt) / 255f
