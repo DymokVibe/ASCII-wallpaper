@@ -30,7 +30,7 @@
     <string-array name="chars_names">
         <item>Classic ( .:-=+*#%@)</item>
         <item>Minimal ( .:-=+#@)</item>
-        <item><![CDATA[Dense ( .'`^":;Il!i><~+_-?][}{1)(|\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$)]]></item>
+        <item>Dense ( .\'`^&quot;:;Il!i&lt;&gt;~+_-?][}{1)(|\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&amp;8%B@$)</item>
     </string-array>
     <string-array name="chars_values">
         <item>classic</item>
