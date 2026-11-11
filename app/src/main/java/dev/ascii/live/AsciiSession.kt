@@ -113,3 +113,4 @@ class AsciiSession(private val ctx: Context) {
             if (any) c.drawText(buf, 0, cfg.cols, 0f, offY - ascent + y * lineH, paint)
         }
     }
+}
