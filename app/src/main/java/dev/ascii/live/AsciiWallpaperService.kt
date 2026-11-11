@@ -1,12 +1,15 @@
 package dev.ascii.live
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.opengl.*
 import android.os.PowerManager
 import android.service.wallpaper.WallpaperService
+import android.util.Log
 import android.view.Choreographer
 import android.view.SurfaceHolder
+import androidx.preference.PreferenceManager
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -14,7 +17,7 @@ import java.nio.FloatBuffer
 class AsciiWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = OpenGlEngine()
 
-    private inner class OpenGlEngine : Engine(), Choreographer.FrameCallback {
+    private inner class OpenGlEngine : Engine(), Choreographer.FrameCallback, SharedPreferences.OnSharedPreferenceChangeListener {
         private val app = applicationContext
         private val choreo = Choreographer.getInstance()
         private var isEngineVisible = false
@@ -37,7 +40,9 @@ class AsciiWallpaperService : WallpaperService() {
         private var uSceneLoc = -1
         private var aPosLoc = -1
 
+        @Volatile
         private var config = Config.load(app)
+        private var prefs: SharedPreferences? = null
 
         private val quadBuffer: FloatBuffer = ByteBuffer.allocateDirect(32)
             .order(ByteOrder.nativeOrder())
@@ -81,39 +86,44 @@ class AsciiWallpaperService : WallpaperService() {
             }
 
             float mapScene(vec3 p, float time, int scene) {
-                if (scene == 1) { // Cubes Grid
+                if (scene == 1) {
+                    vec3 q = p;
+                    q.xz *= rot(time * 0.5);
+                    q.xy *= rot(time * 0.35);
+                    q = mod(q + 1.2, 2.4) - 1.2;
+                    return sdBox(q, vec3(0.38));
+                } else if (scene == 2) {
                     vec3 q = p;
                     q.xz *= rot(time * 0.6);
                     q.xy *= rot(time * 0.4);
-                    q = mod(q + 1.2, 2.4) - 1.2;
-                    return sdBox(q, vec3(0.45));
-                } else if (scene == 2) { // Big Cube
+                    return sdBox(q, vec3(0.75));
+                } else if (scene == 3) {
                     vec3 q = p;
-                    q.xz *= rot(time * 0.7);
-                    q.xy *= rot(time * 0.5);
-                    return sdBox(q, vec3(0.85));
-                } else if (scene == 3) { // 3D DNA Helix
-                    vec3 q = p;
-                    q.xz *= rot(q.y * 1.8 + time * 2.0);
-                    float d1 = length(q.xz - vec2(0.55, 0.0)) - 0.16;
-                    float d2 = length(q.xz + vec2(0.55, 0.0)) - 0.16;
-                    float rbar = length(vec2(q.x, mod(q.y + 0.1, 0.4) - 0.2)) - 0.05;
-                    float bars = max(rbar, abs(q.z) - 0.55);
+                    q.yz *= rot(0.2);
+                    q.xz *= rot(q.y * 1.5 + time * 1.8);
+                    float d1 = length(q.xz - vec2(0.4, 0.0)) - 0.12;
+                    float d2 = length(q.xz + vec2(0.4, 0.0)) - 0.12;
+                    float rbar = length(vec2(q.x, mod(q.y + 0.1, 0.35) - 0.175)) - 0.04;
+                    float bars = max(rbar, abs(q.z) - 0.4);
                     return min(min(d1, d2), bars);
-                } else if (scene == 4) { // 3D Black Hole Accretion Disk
-                    float r = length(p.xz);
-                    float disk = length(vec2(r - 1.2, p.y)) - 0.08;
-                    float hole = length(p) - 0.55;
-                    return max(-hole, disk);
-                } else { // Fusilli Spiral
+                } else if (scene == 4) {
                     vec3 q = p;
-                    q.xz *= rot(q.y * 2.2 + time * 2.5);
-                    return length(q.xz - vec2(0.5, 0.0)) - 0.18;
+                    q.yz *= rot(0.75);
+                    q.xz *= rot(time * 0.8);
+                    float r = length(q.xz);
+                    float disk = length(vec2(r - 1.05, q.y)) - 0.06;
+                    float hole = length(q) - 0.48;
+                    return max(-hole, disk);
+                } else {
+                    vec3 q = p;
+                    q.yz *= rot(0.25);
+                    q.xz *= rot(q.y * 1.8 + time * 2.0);
+                    return length(q.xz - vec2(0.42, 0.0)) - 0.14;
                 }
             }
 
             vec3 calcNormal(vec3 p, float time, int scene) {
-                vec2 e = vec2(0.003, 0.0);
+                vec2 e = vec2(0.005, 0.0);
                 return normalize(vec3(
                     mapScene(p + e.xyy, time, scene) - mapScene(p - e.xyy, time, scene),
                     mapScene(p + e.yxy, time, scene) - mapScene(p - e.yxy, time, scene),
@@ -122,23 +132,23 @@ class AsciiWallpaperService : WallpaperService() {
             }
 
             float renderRaymarch(vec2 p, float time, int scene) {
-                vec3 ro = vec3(0.0, 0.0, -3.2);
+                vec3 ro = vec3(0.0, 0.0, -4.2);
                 vec3 rd = normalize(vec3(p, 1.8));
 
                 float t = 0.0;
-                for (int i = 0; i < 48; i++) {
+                for (int i = 0; i < 32; i++) {
                     vec3 pos = ro + rd * t;
                     float d = mapScene(pos, time, scene);
-                    if (d < 0.005) {
+                    if (d < 0.008) {
                         vec3 n = calcNormal(pos, time, scene);
                         vec3 lightDir = normalize(vec3(0.5, 0.8, -1.0));
                         float diff = max(dot(n, lightDir), 0.15);
                         float spec = pow(max(dot(reflect(-lightDir, n), -rd), 0.0), 16.0);
-                        float occ = exp(-t * 0.25);
+                        float occ = exp(-t * 0.22);
                         return clamp((diff + spec * 0.6) * occ, 0.0, 1.0);
                     }
-                    if (t > 7.0) break;
-                    t += d * 0.75;
+                    if (t > 7.5) break;
+                    t += d * 0.85;
                 }
                 return 0.0;
             }
@@ -160,6 +170,7 @@ class AsciiWallpaperService : WallpaperService() {
 
                 vec2 cell = floor(v_uv * grid);
                 vec2 cellUv = fract(v_uv * grid);
+                vec2 safeCellUv = clamp(cellUv, 0.02, 0.98); // Защита от наложения соседних символов
                 vec2 p = (cell - grid * 0.5) / (grid.y * 0.5);
 
                 float lum = 0.0;
@@ -172,12 +183,22 @@ class AsciiWallpaperService : WallpaperService() {
                 float charRng = hash(cell.x * 31.0 + cell.y * 17.0 + floor(u_time * 8.0));
                 float charIdx = floor(clamp(lum > 0.02 ? (u_scene == 5 ? charRng : lum) : 0.0, 0.0, 0.99) * u_charCount);
 
-                vec2 fontUv = vec2((cellUv.x + charIdx) / u_charCount, cellUv.y);
+                vec2 fontUv = vec2((safeCellUv.x + charIdx) / u_charCount, safeCellUv.y);
                 float charAlpha = texture2D(u_fontTexture, fontUv).a;
 
                 gl_FragColor = vec4(u_color * charAlpha * lum, 1.0);
             }
         """.trimIndent()
+
+        override fun onCreate(surfaceHolder: SurfaceHolder) {
+            super.onCreate(surfaceHolder)
+            prefs = PreferenceManager.getDefaultSharedPreferences(app)
+            prefs?.registerOnSharedPreferenceChangeListener(this)
+        }
+
+        override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+            config = Config.load(app)
+        }
 
         override fun onSurfaceCreated(holder: SurfaceHolder) {
             super.onSurfaceCreated(holder)
@@ -202,7 +223,6 @@ class AsciiWallpaperService : WallpaperService() {
             super.onVisibilityChanged(v)
             isEngineVisible = v
             if (v) {
-                config = Config.load(app)
                 startLoopIfNeeded()
             } else {
                 stopLoop()
@@ -297,6 +317,8 @@ class AsciiWallpaperService : WallpaperService() {
         }
 
         private fun initGl() {
+            releaseGl()
+
             val vShader = loadShader(GLES20.GL_VERTEX_SHADER, vertCode)
             val fShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragCode)
 
@@ -304,6 +326,11 @@ class AsciiWallpaperService : WallpaperService() {
                 GLES20.glAttachShader(it, vShader)
                 GLES20.glAttachShader(it, fShader)
                 GLES20.glLinkProgram(it)
+                val status = IntArray(1)
+                GLES20.glGetProgramiv(it, GLES20.GL_LINK_STATUS, status, 0)
+                if (status[0] == 0) {
+                    Log.e("ASCII_GL", "Program Link Error: ${GLES20.glGetProgramInfoLog(it)}")
+                }
             }
 
             fontTextureId = FontTexture.create(config.ramp)
@@ -318,13 +345,33 @@ class AsciiWallpaperService : WallpaperService() {
         }
 
         private fun loadShader(type: Int, code: String): Int {
-            return GLES20.glCreateShader(type).also { shader ->
-                GLES20.glShaderSource(shader, code)
-                GLES20.glCompileShader(shader)
+            val shader = GLES20.glCreateShader(type)
+            GLES20.glShaderSource(shader, code)
+            GLES20.glCompileShader(shader)
+            val status = IntArray(1)
+            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0)
+            if (status[0] == 0) {
+                Log.e("ASCII_GL", "Shader Compile Error ($type): ${GLES20.glGetShaderInfoLog(shader)}")
+                GLES20.glDeleteShader(shader)
+                return 0
+            }
+            return shader
+        }
+
+        private fun releaseGl() {
+            if (program != 0) {
+                GLES20.glDeleteProgram(program)
+                program = 0
+            }
+            if (fontTextureId != 0) {
+                val tex = intArrayOf(fontTextureId)
+                GLES20.glDeleteTextures(1, tex, 0)
+                fontTextureId = 0
             }
         }
 
         private fun releaseEgl() {
+            releaseGl()
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
@@ -344,6 +391,7 @@ class AsciiWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             stopLoop()
+            prefs?.unregisterOnSharedPreferenceChangeListener(this)
             releaseEgl()
             super.onDestroy()
         }
