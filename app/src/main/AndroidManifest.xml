@@ -30,7 +30,7 @@
                 android:resource="@xml/wallpaper" />
         </service>
 
-        <!-- Окно настроек -->
+       <!-- Окно настроек с иконкой в меню приложений -->
         <activity
             android:name=".SettingsActivity"
             android:exported="true"
@@ -38,6 +38,7 @@
             android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
