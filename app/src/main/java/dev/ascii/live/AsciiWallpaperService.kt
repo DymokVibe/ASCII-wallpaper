@@ -1,12 +1,8 @@
 package dev.ascii.live
 
-import android.content.Context
-import android.content.SharedPreferences
 import android.graphics.Color
 import android.opengl.*
-import android.os.PowerManager
 import android.service.wallpaper.WallpaperService
-import android.util.Log
 import android.view.Choreographer
 import android.view.SurfaceHolder
 import androidx.preference.PreferenceManager
@@ -17,7 +13,7 @@ import java.nio.FloatBuffer
 class AsciiWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = OpenGlEngine()
 
-    private inner class OpenGlEngine : Engine(), Choreographer.FrameCallback, SharedPreferences.OnSharedPreferenceChangeListener {
+    private inner class OpenGlEngine : Engine(), Choreographer.FrameCallback {
         private val app = applicationContext
         private val choreo = Choreographer.getInstance()
         private var isEngineVisible = false
@@ -39,10 +35,6 @@ class AsciiWallpaperService : WallpaperService() {
         private var uCharCountLoc = -1
         private var uSceneLoc = -1
         private var aPosLoc = -1
-
-        @Volatile
-        private var config = Config.load(app)
-        private var prefs: SharedPreferences? = null
 
         private val quadBuffer: FloatBuffer = ByteBuffer.allocateDirect(32)
             .order(ByteOrder.nativeOrder())
@@ -73,95 +65,7 @@ class AsciiWallpaperService : WallpaperService() {
             uniform float u_charCount;
             uniform int u_scene;
 
-            mat2 rot(float a) {
-                float s = sin(a), c = cos(a);
-                return mat2(c, -s, s, c);
-            }
-
             float hash(float n) { return fract(sin(n) * 43758.5453123); }
-
-            float sdBox(vec3 p, vec3 b) {
-                vec3 q = abs(p) - b;
-                return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
-            }
-
-            float mapScene(vec3 p, float time, int scene) {
-                if (scene == 1) {
-                    vec3 q = p;
-                    q.xz *= rot(time * 0.5);
-                    q.xy *= rot(time * 0.35);
-                    q = mod(q + 1.2, 2.4) - 1.2;
-                    return sdBox(q, vec3(0.38));
-                } else if (scene == 2) {
-                    vec3 q = p;
-                    q.xz *= rot(time * 0.6);
-                    q.xy *= rot(time * 0.4);
-                    return sdBox(q, vec3(0.75));
-                } else if (scene == 3) {
-                    vec3 q = p;
-                    q.yz *= rot(0.2);
-                    q.xz *= rot(q.y * 1.5 + time * 1.8);
-                    float d1 = length(q.xz - vec2(0.4, 0.0)) - 0.12;
-                    float d2 = length(q.xz + vec2(0.4, 0.0)) - 0.12;
-                    float rbar = length(vec2(q.x, mod(q.y + 0.1, 0.35) - 0.175)) - 0.04;
-                    float bars = max(rbar, abs(q.z) - 0.4);
-                    return min(min(d1, d2), bars);
-                } else if (scene == 4) {
-                    vec3 q = p;
-                    q.yz *= rot(0.75);
-                    q.xz *= rot(time * 0.8);
-                    float r = length(q.xz);
-                    float disk = length(vec2(r - 1.05, q.y)) - 0.06;
-                    float hole = length(q) - 0.48;
-                    return max(-hole, disk);
-                } else {
-                    vec3 q = p;
-                    q.yz *= rot(0.25);
-                    q.xz *= rot(q.y * 1.8 + time * 2.0);
-                    return length(q.xz - vec2(0.42, 0.0)) - 0.14;
-                }
-            }
-
-            vec3 calcNormal(vec3 p, float time, int scene) {
-                vec2 e = vec2(0.005, 0.0);
-                return normalize(vec3(
-                    mapScene(p + e.xyy, time, scene) - mapScene(p - e.xyy, time, scene),
-                    mapScene(p + e.yxy, time, scene) - mapScene(p - e.yxy, time, scene),
-                    mapScene(p + e.yyx, time, scene) - mapScene(p - e.yyx, time, scene)
-                ));
-            }
-
-            float renderRaymarch(vec2 p, float time, int scene) {
-                vec3 ro = vec3(0.0, 0.0, -4.2);
-                vec3 rd = normalize(vec3(p, 1.8));
-
-                float t = 0.0;
-                for (int i = 0; i < 32; i++) {
-                    vec3 pos = ro + rd * t;
-                    float d = mapScene(pos, time, scene);
-                    if (d < 0.008) {
-                        vec3 n = calcNormal(pos, time, scene);
-                        vec3 lightDir = normalize(vec3(0.5, 0.8, -1.0));
-                        float diff = max(dot(n, lightDir), 0.15);
-                        float spec = pow(max(dot(reflect(-lightDir, n), -rd), 0.0), 16.0);
-                        float occ = exp(-t * 0.22);
-                        return clamp((diff + spec * 0.6) * occ, 0.0, 1.0);
-                    }
-                    if (t > 7.5) break;
-                    t += d * 0.85;
-                }
-                return 0.0;
-            }
-
-            float sceneMatrix(vec2 cell, vec2 grid, float time) {
-                float col = cell.x;
-                float rng = hash(col * 127.1);
-                float speed = 0.4 + rng * 0.8;
-                float drop = fract(cell.y / grid.y + time * speed * 0.25 + rng);
-                float head = smoothstep(0.88, 1.0, drop);
-                float tail = smoothstep(0.0, 0.88, drop) * drop;
-                return tail + head * 1.8;
-            }
 
             void main() {
                 float aspect = u_resolution.x / u_resolution.y;
@@ -170,39 +74,21 @@ class AsciiWallpaperService : WallpaperService() {
 
                 vec2 cell = floor(v_uv * grid);
                 vec2 cellUv = fract(v_uv * grid);
-                vec2 safeCellUv = clamp(cellUv, 0.02, 0.98); // Защита от наложения соседних символов
+                
+                // Простая пульсирующая волна для проверки рендеринга без багов реймарчинга
                 vec2 p = (cell - grid * 0.5) / (grid.y * 0.5);
+                float r = length(p);
+                float lum = sin(r * 8.0 - u_time * 3.0) * 0.5 + 0.5;
 
-                float lum = 0.0;
-                if (u_scene == 5) {
-                    lum = sceneMatrix(cell, grid, u_time);
-                } else {
-                    lum = renderRaymarch(p, u_time, u_scene);
-                }
+                float charRng = hash(cell.x * 31.0 + cell.y * 17.0 + floor(u_time * 5.0));
+                float charIdx = floor(clamp(lum, 0.0, 0.99) * u_charCount);
 
-                float charRng = hash(cell.x * 31.0 + cell.y * 17.0 + floor(u_time * 8.0));
-                float charIdx = floor(clamp(lum > 0.02 ? (u_scene == 5 ? charRng : lum) : 0.0, 0.0, 0.99) * u_charCount);
-
-                vec2 fontUv = vec2((safeCellUv.x + charIdx) / u_charCount, safeCellUv.y);
+                vec2 fontUv = vec2((cellUv.x + charIdx) / u_charCount, cellUv.y);
                 float charAlpha = texture2D(u_fontTexture, fontUv).a;
 
                 gl_FragColor = vec4(u_color * charAlpha * lum, 1.0);
             }
         """.trimIndent()
-
-        override fun onCreate(surfaceHolder: SurfaceHolder) {
-            super.onCreate(surfaceHolder)
-            prefs = PreferenceManager.getDefaultSharedPreferences(app)
-            prefs?.registerOnSharedPreferenceChangeListener(this)
-        }
-
-        override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-            config = Config.load(app)
-        }
-
-        override fun onSurfaceCreated(holder: SurfaceHolder) {
-            super.onSurfaceCreated(holder)
-        }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             super.onSurfaceChanged(holder, format, width, height)
@@ -244,9 +130,7 @@ class AsciiWallpaperService : WallpaperService() {
 
         override fun doFrame(frameTimeNanos: Long) {
             if (!isRunning || !isEngineVisible) return
-
             renderGl()
-
             if (isRunning && isEngineVisible) {
                 choreo.postFrameCallback(this)
             }
@@ -259,27 +143,16 @@ class AsciiWallpaperService : WallpaperService() {
             GLES20.glUseProgram(program)
 
             val time = (System.currentTimeMillis() - startTime) / 1000f
-            val cInt = config.getEffectiveColor(app)
-
-            val red = Color.red(cInt) / 255f
-            val green = Color.green(cInt) / 255f
-            val blue = Color.blue(cInt) / 255f
-
-            val sceneId = when (config.scene) {
-                "cubes" -> 1
-                "bigcube" -> 2
-                "dna" -> 3
-                "blackhole" -> 4
-                "matrix" -> 5
-                else -> 0
-            }
+            val red = 0.0f
+            val green = 1.0f
+            val blue = 0.4f
 
             GLES20.glUniform2f(uResLoc, w.toFloat(), h.toFloat())
             GLES20.glUniform1f(uTimeLoc, time)
             GLES20.glUniform3f(uColorLoc, red, green, blue)
-            GLES20.glUniform1f(uColsLoc, config.cols.toFloat())
-            GLES20.glUniform1f(uCharCountLoc, config.ramp.length.toFloat())
-            GLES20.glUniform1i(uSceneLoc, sceneId)
+            GLES20.glUniform1f(uColsLoc, 60f)
+            GLES20.glUniform1f(uCharCountLoc, 10f)
+            GLES20.glUniform1i(uSceneLoc, 0)
 
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fontTextureId)
@@ -288,7 +161,6 @@ class AsciiWallpaperService : WallpaperService() {
             GLES20.glVertexAttribPointer(aPosLoc, 2, GLES20.GL_FLOAT, false, 0, quadBuffer)
 
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-
             GLES20.glDisableVertexAttribArray(aPosLoc)
 
             EGL14.eglSwapBuffers(eglDisplay, eglSurface)
@@ -317,8 +189,6 @@ class AsciiWallpaperService : WallpaperService() {
         }
 
         private fun initGl() {
-            releaseGl()
-
             val vShader = loadShader(GLES20.GL_VERTEX_SHADER, vertCode)
             val fShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragCode)
 
@@ -326,14 +196,9 @@ class AsciiWallpaperService : WallpaperService() {
                 GLES20.glAttachShader(it, vShader)
                 GLES20.glAttachShader(it, fShader)
                 GLES20.glLinkProgram(it)
-                val status = IntArray(1)
-                GLES20.glGetProgramiv(it, GLES20.GL_LINK_STATUS, status, 0)
-                if (status[0] == 0) {
-                    Log.e("ASCII_GL", "Program Link Error: ${GLES20.glGetProgramInfoLog(it)}")
-                }
             }
 
-            fontTextureId = FontTexture.create(config.ramp)
+            fontTextureId = FontTexture.create(" .:-=+*#%@")
 
             aPosLoc = GLES20.glGetAttribLocation(program, "a_position")
             uResLoc = GLES20.glGetUniformLocation(program, "u_resolution")
@@ -348,30 +213,10 @@ class AsciiWallpaperService : WallpaperService() {
             val shader = GLES20.glCreateShader(type)
             GLES20.glShaderSource(shader, code)
             GLES20.glCompileShader(shader)
-            val status = IntArray(1)
-            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0)
-            if (status[0] == 0) {
-                Log.e("ASCII_GL", "Shader Compile Error ($type): ${GLES20.glGetShaderInfoLog(shader)}")
-                GLES20.glDeleteShader(shader)
-                return 0
-            }
             return shader
         }
 
-        private fun releaseGl() {
-            if (program != 0) {
-                GLES20.glDeleteProgram(program)
-                program = 0
-            }
-            if (fontTextureId != 0) {
-                val tex = intArrayOf(fontTextureId)
-                GLES20.glDeleteTextures(1, tex, 0)
-                fontTextureId = 0
-            }
-        }
-
         private fun releaseEgl() {
-            releaseGl()
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
@@ -391,7 +236,6 @@ class AsciiWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             stopLoop()
-            prefs?.unregisterOnSharedPreferenceChangeListener(this)
             releaseEgl()
             super.onDestroy()
         }
