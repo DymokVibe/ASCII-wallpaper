@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <PreferenceCategory android:title="Сцена">
         <ListPreference android:key="scene" android:title="Стиль фигур" android:defaultValue="fusilli"
-            android:entries="@array/scene_names" android:entryValues="@array/scene_values"
+            android:entries="@array/scene_entries" android:entryValues="@array/scene_values"
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
     <PreferenceCategory android:title="Картинка">
@@ -12,7 +12,10 @@
         <ListPreference android:key="chars" android:title="Набор символов" android:defaultValue="classic"
             android:entries="@array/chars_names" android:entryValues="@array/chars_values"
             app:useSimpleSummaryProvider="true" />
-        <ListPreference android:key="color" android:title="Цвет символов" android:defaultValue="#F2FFF2"
+        <ListPreference android:key="color_preset" android:title="Цветовая палитра" android:defaultValue="matrix"
+            android:entries="@array/color_preset_entries" android:entryValues="@array/color_preset_values"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference android:key="color" android:title="Кастомный цвет" android:defaultValue="#F2FFF2"
             android:entries="@array/color_names" android:entryValues="@array/color_values"
             app:useSimpleSummaryProvider="true" />
         <ListPreference android:key="bg" android:title="Фон" android:defaultValue="#000000"
