@@ -7,6 +7,9 @@ import android.os.PowerManager
 import android.service.wallpaper.WallpaperService
 import android.view.Choreographer
 import android.view.SurfaceHolder
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
 
 class AsciiWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = OpenGlEngine()
@@ -19,12 +22,10 @@ class AsciiWallpaperService : WallpaperService() {
         private var h = 0
         private var startTime = System.currentTimeMillis()
 
-        // EGL параметры
         private var eglDisplay = EGL14.EGL_NO_DISPLAY
         private var eglContext = EGL14.EGL_NO_CONTEXT
         private var eglSurface = EGL14.EGL_NO_SURFACE
 
-        // GL Шейдеры
         private var program = 0
         private var fontTextureId = 0
         private var uResLoc = -1
@@ -32,10 +33,59 @@ class AsciiWallpaperService : WallpaperService() {
         private var uColorLoc = -1
         private var uColsLoc = -1
         private var uCharCountLoc = -1
+        private var aPosLoc = -1
 
-        private val vertShaderSource = """
-            attribute vec4 a_position;
-            void main() { gl_Position = a_position; }
+        private var config = Config.load(app)
+
+        private val quadBuffer: FloatBuffer = ByteBuffer.allocateDirect(32)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .apply {
+                put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
+                position(0)
+            }
+
+        private val vertCode = """
+            attribute vec2 a_position;
+            varying vec2 v_uv;
+            void main() {
+                v_uv = a_position * 0.5 + 0.5;
+                v_uv.y = 1.0 - v_uv.y;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        """.trimIndent()
+
+        private val fragCode = """
+            precision mediump float;
+            varying vec2 v_uv;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            uniform vec3 u_color;
+            uniform sampler2D u_fontTexture;
+            uniform float u_cols;
+            uniform float u_charCount;
+
+            void main() {
+                float aspect = u_resolution.x / u_resolution.y;
+                float rows = floor(u_cols / aspect);
+                vec2 grid = vec2(u_cols, rows);
+
+                vec2 cell = floor(v_uv * grid);
+                vec2 cellUv = fract(v_uv * grid);
+                vec2 p = (cell - grid * 0.5) / (grid.y * 0.5);
+
+                float r = length(p);
+                float a = atan(p.y, p.x);
+                float disk = sin(1.0 / (r + 0.08) * 6.0 - u_time * 3.0 + a * 2.0);
+                float lum = smoothstep(0.1, 0.95, disk) * exp(-r * 0.7);
+                if (r < 0.22) lum = 0.0;
+
+                float charIdx = floor(clamp(lum, 0.0, 0.99) * u_charCount);
+                vec2 fontUv = vec2((cellUv.x + charIdx) / u_charCount, cellUv.y);
+                float charAlpha = texture2D(u_fontTexture, fontUv).a;
+
+                gl_FragColor = vec4(u_color * charAlpha * lum, 1.0);
+            }
         """.trimIndent()
 
         override fun onSurfaceCreated(holder: SurfaceHolder) {
@@ -46,7 +96,8 @@ class AsciiWallpaperService : WallpaperService() {
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             super.onSurfaceChanged(holder, format, width, height)
-            w = width; h = height
+            w = width
+            h = height
             GLES20.glViewport(0, 0, w, h)
         }
 
@@ -65,38 +116,49 @@ class AsciiWallpaperService : WallpaperService() {
             if (visible == active) return
             visible = active
             choreo.removeFrameCallback(this)
-            if (active) choreo.postFrameCallback(this)
+            if (active) {
+                config = Config.load(app)
+                choreo.postFrameCallback(this)
+            }
         }
 
-        override fun doFrame(ns: Long) {
-            if (!visible || !isInteractive()) {
-                if (visible) onVisibilityChanged(false)
-                return
-            }
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!visible || !isInteractive()) return
 
             renderGl()
 
-            if (visible) choreo.postFrameCallback(this)
+            if (visible) {
+                choreo.postFrameCallback(this)
+            }
         }
 
         private fun renderGl() {
-            if (eglSurface == EGL14.EGL_NO_SURFACE) return
+            if (eglSurface == EGL14.EGL_NO_SURFACE || w <= 0 || h <= 0) return
 
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
             GLES20.glUseProgram(program)
 
             val time = (System.currentTimeMillis() - startTime) / 1000f
+            val cInt = config.getEffectiveColor(app)
+            val red = Color.red(cInt) / 255f
+            val green = Color.green(cInt) / 255f
+            val blue = Color.blue(cInt) / 255f
+
             GLES20.glUniform2f(uResLoc, w.toFloat(), h.toFloat())
             GLES20.glUniform1f(uTimeLoc, time)
-            GLES20.glUniform3f(uColorLoc, 0.0f, 1.0f, 0.4f) // Зеленый цвет Matrix
-            GLES20.glUniform1f(uColsLoc, 80f)
-            GLES20.glUniform1f(uCharCountLoc, 10f)
+            GLES20.glUniform3f(uColorLoc, red, green, blue)
+            GLES20.glUniform1f(uColsLoc, config.cols.toFloat())
+            GLES20.glUniform1f(uCharCountLoc, config.ramp.length.toFloat())
 
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fontTextureId)
 
-            // Рендер прямоугольника во весь экран (Quad)
+            GLES20.glEnableVertexAttribArray(aPosLoc)
+            GLES20.glVertexAttribPointer(aPosLoc, 2, GLES20.GL_FLOAT, false, 0, quadBuffer)
+
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+
+            GLES20.glDisableVertexAttribArray(aPosLoc)
 
             EGL14.eglSwapBuffers(eglDisplay, eglSurface)
         }
@@ -124,8 +186,7 @@ class AsciiWallpaperService : WallpaperService() {
         }
 
         private fun initGl() {
-            val fragCode = app.assets.open("ascii.frag").bufferedReader().use { it.readText() }
-            val vShader = loadShader(GLES20.GL_VERTEX_SHADER, vertShaderSource)
+            val vShader = loadShader(GLES20.GL_VERTEX_SHADER, vertCode)
             val fShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragCode)
 
             program = GLES20.glCreateProgram().also {
@@ -134,8 +195,9 @@ class AsciiWallpaperService : WallpaperService() {
                 GLES20.glLinkProgram(it)
             }
 
-            fontTextureId = FontTexture.create(" .:-=+*#%@")
+            fontTextureId = FontTexture.create(config.ramp)
 
+            aPosLoc = GLES20.glGetAttribLocation(program, "a_position")
             uResLoc = GLES20.glGetUniformLocation(program, "u_resolution")
             uTimeLoc = GLES20.glGetUniformLocation(program, "u_time")
             uColorLoc = GLES20.glGetUniformLocation(program, "u_color")
