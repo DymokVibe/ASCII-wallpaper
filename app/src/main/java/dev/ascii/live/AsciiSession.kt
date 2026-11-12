@@ -1,18 +1,22 @@
 package dev.ascii.live
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import kotlin.math.*
 
-/** Вся логика кадра. Используется и обоями, и превью в настройках. */
 class AsciiSession(private val ctx: Context) {
     var cfg: Config = Config.load(ctx)
         private set
 
     private val r = Raster()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE }
+
     private var ang = 0f
     private var cycleT = 0f
     private var dragYaw = 0f
@@ -22,95 +26,193 @@ class AsciiSession(private val ctx: Context) {
     private var tiltPitch = 0f
     private var tgtYaw = 0f
     private var tgtPitch = 0f
+    private var pageYaw = 0f
+    private var tgtPageYaw = 0f
     private var unlockT = 9f
+    private var boostT = 0f
 
-    private var lw = 0; private var lh = 0; private var lcols = 0
-    private var rows = 1
-    private var lineH = 1f; private var ascent = 0f; private var offY = 0f; private var aspect = 0.5f
-    private var buf = CharArray(0)
+    private var lw = 0
+    private var lh = 0
+    private var lcols = 0
+    private var lcolor = 0
+    private var lramp = ""
 
-    fun reload() { cfg = Config.load(ctx) }
-    fun unlock() { if (cfg.unlock) unlockT = 0f }
-    fun kick() { if (cfg.touch) yawVel += 4f }
+    var rows = 1
+        private set
+    private var cellW = 1f
+    private var lineH = 1f
+    private var ascent = 0f
+    private var offY = 0f
+    private var aspect = 0.5f
+
+    private var atlas: Bitmap? = null
+    private var srcRects = emptyArray<Rect>()
+    private val dstRect = RectF()
+    private var xCoords = FloatArray(0)
+    private var yCoords = FloatArray(0)
+    private var prevLum = FloatArray(0)
+
+    fun reload() {
+        cfg = Config.load(ctx)
+    }
+
+    fun unlock() {
+        if (cfg.unlock) unlockT = 0f
+    }
+
+    fun kick() {
+        if (cfg.touch) {
+            yawVel += 4.2f
+            boostT = 1.6f
+        }
+    }
+
     fun drag(dx: Float, dy: Float) {
         if (!cfg.touch) return
         dragYaw += dx * 0.012f
         dragPitch = (dragPitch + dy * 0.012f).coerceIn(-1.2f, 1.2f)
+        boostT = 1.2f
     }
+
+    fun pageOffset(xOffset: Float) {
+        tgtPageYaw = (xOffset.coerceIn(0f, 1f) - 0.5f) * 1.35f
+    }
+
     fun tilt(ax: Float, az: Float) {
         tgtYaw = (-ax / 9.8f * 0.6f).coerceIn(-0.6f, 0.6f)
         tgtPitch = ((az / 9.8f - 0.35f) * 0.6f).coerceIn(-0.6f, 0.6f)
     }
-    fun effectiveFps(lowPower: Boolean): Int = if (cfg.saver && lowPower) min(cfg.fps, 30) else cfg.fps
+
+    fun effectiveFps(lowPower: Boolean): Int {
+        if (cfg.touch && boostT > 0f) return max(cfg.fps, 60)
+        return if (cfg.saver && lowPower) min(cfg.fps, 30) else cfg.fps
+    }
 
     private fun step(dt: Float) {
         ang += dt * Math.toRadians(cfg.speed.toDouble()).toFloat()
         if (unlockT < 2f) unlockT += dt
+        if (boostT > 0f) boostT = max(0f, boostT - dt)
         dragYaw += yawVel * dt
         yawVel *= exp(-1.3f * dt)
         dragPitch *= exp(-1.5f * dt)
-        val k = 1f - exp(-6f * dt)
+        val k = 1f - exp(-7f * dt)
         tiltYaw += ((if (cfg.tilt) tgtYaw else 0f) - tiltYaw) * k
         tiltPitch += ((if (cfg.tilt) tgtPitch else 0f) - tiltPitch) * k
+        pageYaw += ((if (cfg.swipe) tgtPageYaw else 0f) - pageYaw) * k
         if (cfg.scene == "cycle") cycleT += dt
     }
 
-    private fun layout(w: Int, h: Int) {
-        lw = w; lh = h; lcols = cfg.cols
+    private fun rebuildAtlasAndLayout(w: Int, h: Int) {
+        lw = w
+        lh = h
+        lcols = cfg.cols
+        lcolor = cfg.color
+        lramp = cfg.ramp
+
         paint.textSize = 100f
-        val adv = paint.measureText("M") / 100f
+        val adv = max(0.1f, paint.measureText("M") / 100f)
         paint.textSize = w / (cfg.cols * adv)
         val fm = paint.fontMetrics
         ascent = fm.ascent
-        lineH = fm.descent - fm.ascent
+        lineH = max(1f, fm.descent - fm.ascent)
+        cellW = max(1f, w / cfg.cols.toFloat())
         rows = max(1, (h / lineH).toInt())
         offY = (h - rows * lineH) / 2f
-        aspect = (w / cfg.cols.toFloat()) / lineH
-        buf = CharArray(cfg.cols)
+        aspect = cellW / lineH
         r.portrait = h >= w
+
+        xCoords = FloatArray(cfg.cols) { x -> x * cellW }
+        yCoords = FloatArray(rows) { y -> offY + y * lineH }
+
+        val totalCells = cfg.cols * rows
+        if (prevLum.size != totalCells) {
+            prevLum = FloatArray(totalCells)
+        } else {
+            prevLum.fill(0f)
+        }
+
+        val glyphW = max(1, ceil(cellW).toInt())
+        val glyphH = max(1, ceil(lineH).toInt())
+        val rampLen = cfg.ramp.length
+
+        atlas?.recycle()
+        val sheet = Bitmap.createBitmap(glyphW * rampLen, glyphH, Bitmap.Config.ARGB_8888)
+        sheet.eraseColor(Color.TRANSPARENT)
+        val ac = Canvas(sheet)
+        paint.color = cfg.color
+
+        val rects = Array(rampLen) { i ->
+            val left = i * glyphW
+            val ch = cfg.ramp[i]
+            if (ch != ' ') {
+                ac.drawText(ch.toString(), left.toFloat(), -ascent, paint)
+            }
+            Rect(left, 0, left + glyphW, glyphH)
+        }
+        srcRects = rects
+        atlas = sheet
     }
 
     fun frame(c: Canvas, w: Int, h: Int, dt: Float) {
         if (w <= 0 || h <= 0) return
         step(dt)
         c.drawColor(cfg.bg)
-        if (w != lw || h != lh || cfg.cols != lcols) layout(w, h)
-    
+
+        if (w != lw || h != lh || cfg.cols != lcols || cfg.color != lcolor || cfg.ramp != lramp || atlas == null) {
+            rebuildAtlasAndLayout(w, h)
+        }
+
+        val sheet = atlas ?: return
         val u = if (cfg.unlock) (unlockT / 0.8f).coerceIn(0f, 1f) else 1f
         val ease = 1f - (1f - u) * (1f - u) * (1f - u)
-        r.userYaw = dragYaw + tiltYaw + (1f - ease) * 6.2832f
+
+        r.userYaw = dragYaw + tiltYaw + pageYaw + (1f - ease) * 6.2832f
         r.userPitch = dragPitch + tiltPitch
         r.thick = cfg.thick
         r.aspect = aspect
-    
-        val idx = if (cfg.scene == "cycle") (cycleT / 20f).toInt() % Scenes.names.size
-                  else Scenes.names.indexOf(cfg.scene).coerceAtLeast(0)
+
+        val idx = if (cfg.scene == "cycle") {
+            (cycleT / 20f).toInt() % Scenes.names.size
+        } else {
+            Scenes.names.indexOf(cfg.scene).coerceAtLeast(0)
+        }
         r.begin(cfg.cols, rows)
         r.scale = min(cfg.cols * 0.5f, rows * 0.5f / aspect) / Scenes.extent[idx] * (1f + 0.35f * (1f - ease))
         Scenes.draw(idx, r, ang)
-    
-        paint.color = cfg.color
-        val ramp = cfg.ramp
-        val n = ramp.length
+
+        val n = cfg.ramp.length
         val maxRampIdx = n - 2
         val rampScale = n - 1
-        val z = r.z; val l = r.l
-    
+        val z = r.z
+        val l = r.l
+        val cols = cfg.cols
+        val useTrail = cfg.trail
+        val decay = if (useTrail && dt > 0f) exp(-11f * dt) else 0f
+        val cw = cellW
+        val ch = lineH
+
         for (y in 0 until rows) {
-            var any = false
-            val rowOffset = y * cfg.cols
-            for (x in 0 until cfg.cols) {
+            val rowOffset = y * cols
+            val y0 = yCoords[y]
+            val y1 = y0 + ch
+            for (x in 0 until cols) {
                 val i = rowOffset + x
-                val lum = l[i]
-                if (z[i] == Float.MAX_VALUE || lum < 0.02f) {
-                    buf[x] = ' '
+                val rawLum = if (z[i] == Float.MAX_VALUE) 0f else l[i]
+                val lum = if (useTrail) {
+                    val v = max(rawLum, prevLum[i] * decay)
+                    prevLum[i] = if (v < 0.015f) 0f else v
+                    v
                 } else {
+                    rawLum
+                }
+
+                if (lum >= 0.02f) {
                     val idxLum = 1 + min((lum.coerceAtMost(1f) * rampScale).toInt(), maxRampIdx)
-                    buf[x] = ramp[idxLum]
-                    any = true
+                    val x0 = xCoords[x]
+                    dstRect.set(x0, y0, x0 + cw, y1)
+                    c.drawBitmap(sheet, srcRects[idxLum], dstRect, null)
                 }
             }
-            if (any) c.drawText(buf, 0, cfg.cols, 0f, offY - ascent + y * lineH, paint)
         }
     }
 }
