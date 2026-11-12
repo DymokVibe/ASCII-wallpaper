@@ -6,6 +6,7 @@
         <item>ДНК</item>
         <item>Чёрная дыра</item>
         <item>Тор (Бублик)</item>
+        <item>Сфера Фибоначчи</item>
         <item>Все по кругу (20 с)</item>
     </string-array>
     <string-array name="scene_values">
@@ -15,6 +16,7 @@
         <item>dna</item>
         <item>blackhole</item>
         <item>torus</item>
+        <item>sphere</item>
         <item>cycle</item>
     </string-array>
     <string-array name="chars_names">
@@ -22,12 +24,14 @@
         <item>Подробный (70 символов)</item>
         <item>Бинарный 0/1</item>
         <item>Минимал  .:*#</item>
+        <item>Свой набор символов...</item>
     </string-array>
     <string-array name="chars_values">
         <item>classic</item>
         <item>dense</item>
         <item>binary</item>
         <item>minimal</item>
+        <item>custom</item>
     </string-array>
     <string-array name="color_names">
         <item>Тема телефона (Material You)</item>
