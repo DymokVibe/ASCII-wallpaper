@@ -1,11 +1,14 @@
 package dev.ascii.live
 
+import android.app.WallpaperColors
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.graphics.Canvas
+import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -22,7 +25,14 @@ import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 
 class AsciiWallpaperService : WallpaperService() {
-    override fun onCreateEngine(): Engine = AsciiEngine()
+    private var activeEngine: AsciiEngine? = null
+
+    override fun onCreateEngine(): Engine = AsciiEngine().also { activeEngine = it }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        activeEngine?.onSystemThemeChanged()
+    }
 
     private inner class AsciiEngine : Engine(), Choreographer.FrameCallback, SensorEventListener {
         private val app = applicationContext
@@ -39,9 +49,16 @@ class AsciiWallpaperService : WallpaperService() {
 
         private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             session.reload()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                try {
+                    notifyColorsChanged()
+                } catch (_: Exception) {}
+            }
             if (running) {
                 stopSensors()
                 startSensors()
+            } else {
+                drawFrame(0f)
             }
         }
 
@@ -60,9 +77,33 @@ class AsciiWallpaperService : WallpaperService() {
             }
         }
 
+        fun onSystemThemeChanged() {
+            session.reload()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                try {
+                    notifyColorsChanged()
+                } catch (_: Exception) {}
+            }
+            drawFrame(0f)
+        }
+
+        override fun onComputeColors(): WallpaperColors? {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                val primary = Color.valueOf(session.cfg.color)
+                val bg = Color.valueOf(session.cfg.bg)
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    WallpaperColors(primary, bg, primary, WallpaperColors.HINT_SUPPORTS_DARK_THEME)
+                } else {
+                    WallpaperColors(primary, bg, primary)
+                }
+            }
+            return super.onComputeColors()
+        }
+
         override fun onCreate(sh: SurfaceHolder) {
             super.onCreate(sh)
             setTouchEventsEnabled(true)
+            setOffsetNotificationsEnabled(true)
             prefs.registerOnSharedPreferenceChangeListener(prefListener)
             val filter = IntentFilter().apply {
                 addAction(Intent.ACTION_USER_PRESENT)
@@ -73,6 +114,7 @@ class AsciiWallpaperService : WallpaperService() {
         }
 
         override fun onDestroy() {
+            if (activeEngine === this) activeEngine = null
             setRunning(false)
             prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
             try {
@@ -98,6 +140,17 @@ class AsciiWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(v: Boolean) {
             super.onVisibilityChanged(v)
             setRunning(v)
+        }
+
+        override fun onOffsetsChanged(
+            xOffset: Float,
+            yOffset: Float,
+            xOffsetStep: Float,
+            yOffsetStep: Float,
+            xPixelOffset: Int,
+            yPixelOffset: Int
+        ) {
+            session.pageOffset(xOffset)
         }
 
         private fun setRunning(shouldRun: Boolean) {
@@ -172,12 +225,26 @@ class AsciiWallpaperService : WallpaperService() {
 
         override fun onTouchEvent(e: MotionEvent) {
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { tx = e.x; ty = e.y }
-                MotionEvent.ACTION_MOVE -> { session.drag(e.x - tx, e.y - ty); tx = e.x; ty = e.y }
+                MotionEvent.ACTION_DOWN -> {
+                    tx = e.x
+                    ty = e.y
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    session.drag(e.x - tx, e.y - ty)
+                    tx = e.x
+                    ty = e.y
+                }
             }
         }
 
-        override fun onCommand(action: String?, x: Int, y: Int, z: Int, extras: Bundle?, resultRequested: Boolean): Bundle? {
+        override fun onCommand(
+            action: String?,
+            x: Int,
+            y: Int,
+            z: Int,
+            extras: Bundle?,
+            resultRequested: Boolean
+        ): Bundle? {
             if (action == "android.wallpaper.tap") session.kick()
             return null
         }
@@ -193,7 +260,10 @@ class AsciiWallpaperService : WallpaperService() {
             app.getSystemService(SensorManager::class.java)?.unregisterListener(this)
         }
 
-        override fun onSensorChanged(e: SensorEvent) { session.tilt(e.values[0], e.values[2]) }
+        override fun onSensorChanged(e: SensorEvent) {
+            session.tilt(e.values[0], e.values[2])
+        }
+
         override fun onAccuracyChanged(s: Sensor?, a: Int) {}
     }
 }
