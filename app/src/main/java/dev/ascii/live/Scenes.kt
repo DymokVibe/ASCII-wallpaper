@@ -5,21 +5,24 @@ import kotlin.math.*
 private const val TAU = 6.2831855f
 
 object Scenes {
-    val names = arrayOf("fusilli", "cubes", "bigcube", "dna", "blackhole")
-    /** Половина «полезной» ширины сцены в единицах мира — по ней считается масштаб. */
-    val extent = floatArrayOf(2.0f, 1.7f, 2.4f, 2.0f, 5.4f)
+    val names = arrayOf("fusilli", "cubes", "bigcube", "dna", "blackhole", "torus")
+    val extent = floatArrayOf(2.0f, 1.7f, 2.4f, 2.0f, 5.4f, 2.2f)
 
     fun draw(i: Int, r: Raster, a: Float) {
         when (i) {
             0 -> fusilli(r, a)
             1 -> cubes(r, a)
-            2 -> { r.setRot(0f, 0f, 0f); cube(r, 0f, 0f, 0f, 1.3f, a, a * 0.6f) }
+            2 -> {
+                r.setRot(0f, 0f, 0f)
+                cube(r, 0f, 0f, 0f, 1.3f, a, a * 0.6f)
+            }
             3 -> dna(r, a)
-            else -> blackHole(r, a)
+            4 -> blackHole(r, a)
+            else -> torus(r, a)
         }
     }
 
-    // ---------- Макароны: две спиральные «трубки», точки с нормалями считаются один раз ----------
+    // ---------- Макароны ----------
     private val fus: FloatArray by lazy {
         val rods = 2; val n = 260; val m = 14
         val out = FloatArray(rods * n * m * 6)
@@ -94,7 +97,7 @@ object Scenes {
         cube(r, sx, sy, 0f, 0.8f, -a * 0.9f, a * 0.5f + 1f)
     }
 
-    // ---------- ДНК: бесконечная диагональ ----------
+    // ---------- ДНК ----------
     private fun dna(r: Raster, a: Float) {
         r.setRot(0f, 0f, -0.6f)
         val n = 150; val y0 = -8f; val dy = 16f / n
@@ -114,46 +117,84 @@ object Scenes {
     }
 
     // ---------- Чёрная дыра ----------
- // Храним 4 значения на точку: [rr, initial_th, speed_factor, base_lum]
- private val disk: FloatArray by lazy {
-     val list = ArrayList<Float>()
-     var rr = 1.9f
-     while (rr < 5.2f) {
-         val cnt = (rr * 60).toInt()
-         val speed = 5f / (rr * sqrt(rr)) // Предрассчитано
-         val baseLum = (2f / rr).pow(1.2f) // Предрассчитано
-         for (i in 0 until cnt) {
-             val th = i * TAU / cnt + rr * 7.13f
-             list.add(rr)
-             list.add(th)
-             list.add(speed)
-             list.add(baseLum)
-         }
-         rr += 0.06f
-     }
-     list.toFloatArray()
- }
- 
- private fun blackHole(r: Raster, a: Float) {
-     r.setRot(0f, 0f, 0f, false)
-     r.disc(0f, 0f, 0f, 1.45f)
-     for (k in 0 until 3) {
-         val rad = 1.62f + k * 0.17f
-         val cnt = (rad * 90).toInt()
-         for (i in 0 until cnt) {
-             val ph = i * TAU / cnt
-             r.pt(rad * cos(ph), rad * sin(ph), -0.3f, (0.95f - k * 0.25f) * (0.7f + 0.3f * sin(ph * 2f + a * 3f)))
-         }
-     }
-     r.setRot(0f, -0.28f, 0f)
-     val d = disk
-     var k = 0
-     while (k < d.size) {
-         val rr = d[k]
-         val th = d[k + 1] + a * d[k + 2]
-         val lum = d[k + 3] * (0.75f + 0.25f * cos(th))
-         r.pt(rr * cos(th), 0f, rr * sin(th), lum)
-         k += 4
-     }
- }
+    private val disk: FloatArray by lazy {
+        val list = ArrayList<Float>()
+        var rr = 1.9f
+        while (rr < 5.2f) {
+            val cnt = (rr * 60).toInt()
+            val speed = 5f / (rr * sqrt(rr))
+            val baseLum = (2f / rr).pow(1.2f)
+            for (i in 0 until cnt) {
+                val th = i * TAU / cnt + rr * 7.13f
+                list.add(rr)
+                list.add(th)
+                list.add(speed)
+                list.add(baseLum)
+            }
+            rr += 0.06f
+        }
+        list.toFloatArray()
+    }
+
+    private fun blackHole(r: Raster, a: Float) {
+        r.setRot(0f, 0f, 0f, false)
+        r.disc(0f, 0f, 0f, 1.45f)
+        for (k in 0 until 3) {
+            val rad = 1.62f + k * 0.17f
+            val cnt = (rad * 90).toInt()
+            for (i in 0 until cnt) {
+                val ph = i * TAU / cnt
+                r.pt(rad * cos(ph), rad * sin(ph), -0.3f, (0.95f - k * 0.25f) * (0.7f + 0.3f * sin(ph * 2f + a * 3f)))
+            }
+        }
+        r.setRot(0f, -0.28f, 0f)
+        val d = disk
+        var k = 0
+        while (k < d.size) {
+            val rr = d[k]
+            val th = d[k + 1] + a * d[k + 2]
+            val lum = d[k + 3] * (0.75f + 0.25f * cos(th))
+            r.pt(rr * cos(th), 0f, rr * sin(th), lum)
+            k += 4
+        }
+    }
+
+    // ---------- Тор (Бублик) ----------
+    private val tor: FloatArray by lazy {
+        val n = 72
+        val m = 30
+        val majorR = 1.25f
+        val minorR = 0.54f
+        val out = FloatArray(n * m * 6)
+        var k = 0
+        for (i in 0 until n) {
+            val u = i * TAU / n
+            val cu = cos(u); val su = sin(u)
+            for (j in 0 until m) {
+                val v = j * TAU / m
+                val cv = cos(v); val sv = sin(v)
+                val nx = cv * cu
+                val ny = sv
+                val nz = cv * su
+                val rr = majorR + minorR * cv
+                out[k++] = rr * cu
+                out[k++] = minorR * sv
+                out[k++] = rr * su
+                out[k++] = nx
+                out[k++] = ny
+                out[k++] = nz
+            }
+        }
+        out
+    }
+
+    private fun torus(r: Raster, a: Float) {
+        r.setRot(a * 0.85f, 0.58f, a * 0.35f)
+        val d = tor
+        var k = 0
+        while (k < d.size) {
+            r.pn(d[k], d[k + 1], d[k + 2], d[k + 3], d[k + 4], d[k + 5], 1f)
+            k += 6
+        }
+    }
 }
