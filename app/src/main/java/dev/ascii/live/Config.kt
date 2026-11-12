@@ -17,8 +17,10 @@ data class Config(
     val fps: Int,
     val thick: Int,
     val color: Int,
+    val highlightColor: Int,
     val bg: Int,
     val ramp: String,
+    val duotone: Boolean,
     val trail: Boolean,
     val swipe: Boolean,
     val tilt: Boolean,
@@ -48,6 +50,16 @@ data class Config(
             }
         }
 
+        fun resolveHighlight(c: Context, raw: String, primary: Int): Int {
+            if (raw == "monet" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                return ContextCompat.getColor(c, android.R.color.system_accent2_100)
+            }
+            val r = (Color.red(primary) + (255 - Color.red(primary)) * 0.58f).toInt().coerceIn(0, 255)
+            val g = (Color.green(primary) + (255 - Color.green(primary)) * 0.58f).toInt().coerceIn(0, 255)
+            val b = (Color.blue(primary) + (255 - Color.blue(primary)) * 0.58f).toInt().coerceIn(0, 255)
+            return Color.rgb(r, g, b)
+        }
+
         fun resolveBg(c: Context, raw: String): Int {
             if (raw == "monet_bg") {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -66,21 +78,33 @@ data class Config(
             val p = PreferenceManager.getDefaultSharedPreferences(c)
             val colorRaw = p.getString("color", "monet") ?: "monet"
             val bgRaw = p.getString("bg", "#000000") ?: "#000000"
-            val ramp = when (p.getString("chars", "classic")) {
+            val primary = resolveAccent(c, colorRaw)
+            val highlight = resolveHighlight(c, colorRaw, primary)
+
+            val charsMode = p.getString("chars", "classic") ?: "classic"
+            val ramp = when (charsMode) {
                 "dense" -> DENSE
                 "binary" -> " 01"
                 "minimal" -> " .:*#"
+                "custom" -> {
+                    val rawCustom = p.getString("custom_chars", CLASSIC).orEmpty()
+                    val normalized = if (rawCustom.startsWith(' ')) rawCustom else " $rawCustom"
+                    if (normalized.length >= 2) normalized else CLASSIC
+                }
                 else -> CLASSIC
             }
+
             return Config(
                 scene = p.getString("scene", "fusilli") ?: "fusilli",
                 cols = p.getInt("cols", 100).coerceIn(40, 200),
                 speed = p.getInt("speed", 15).coerceIn(0, 90),
                 fps = (p.getString("fps", "60") ?: "60").toIntOrNull() ?: 60,
                 thick = p.getInt("thick", 1).coerceIn(1, 3),
-                color = resolveAccent(c, colorRaw),
+                color = primary,
+                highlightColor = highlight,
                 bg = resolveBg(c, bgRaw),
                 ramp = ramp,
+                duotone = p.getBoolean("duotone", true),
                 trail = p.getBoolean("trail", true),
                 swipe = p.getBoolean("swipe", true),
                 tilt = p.getBoolean("tilt", false),
