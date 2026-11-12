@@ -12,7 +12,7 @@
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="Картинка и тема">
+    <PreferenceCategory android:title="Картинка и палитра">
         <ListPreference
             android:key="color"
             android:title="Цвет символов"
@@ -34,6 +34,12 @@
             android:entries="@array/chars_names"
             android:entryValues="@array/chars_values"
             app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            android:key="custom_chars"
+            android:title="Свои символы (от тусклого к яркому)"
+            android:defaultValue=" .:-=+*#%@"
+            android:dialogMessage="Введите минимум 2 символа по возрастанию яркости. Пробел в начале добавляется автоматически."
+            app:useSimpleSummaryProvider="true" />
         <SeekBarPreference
             android:key="cols"
             android:title="Плотность (символов по ширине)"
@@ -49,6 +55,11 @@
             android:max="3"
             app:min="1"
             app:showSeekBarValue="true" />
+        <SwitchPreferenceCompat
+            android:key="duotone"
+            android:title="Двухцветный блик на пиках"
+            android:summary="Подсвечивает самые яркие грани вторичным акцентом"
+            android:defaultValue="true" />
         <SwitchPreferenceCompat
             android:key="trail"
             android:title="Люминофорный шлейф (CRT)"
