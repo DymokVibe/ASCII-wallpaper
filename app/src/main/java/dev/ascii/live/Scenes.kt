@@ -5,8 +5,8 @@ import kotlin.math.*
 private const val TAU = 6.2831855f
 
 object Scenes {
-    val names = arrayOf("fusilli", "cubes", "bigcube", "dna", "blackhole", "torus")
-    val extent = floatArrayOf(2.0f, 1.7f, 2.4f, 2.0f, 5.4f, 2.2f)
+    val names = arrayOf("fusilli", "cubes", "bigcube", "dna", "blackhole", "torus", "sphere")
+    val extent = floatArrayOf(2.0f, 1.7f, 2.4f, 2.0f, 5.4f, 2.2f, 2.0f)
 
     fun draw(i: Int, r: Raster, a: Float) {
         when (i) {
@@ -18,7 +18,8 @@ object Scenes {
             }
             3 -> dna(r, a)
             4 -> blackHole(r, a)
-            else -> torus(r, a)
+            5 -> torus(r, a)
+            else -> sphere(r, a)
         }
     }
 
@@ -116,24 +117,31 @@ object Scenes {
         }
     }
 
-    // ---------- Чёрная дыра ----------
-    private val disk: FloatArray by lazy {
-        val list = ArrayList<Float>()
+    // ---------- Чёрная дыра (кольцевой батчинг без sin/cos на частицу) ----------
+    private class DiskRing(
+        val rr: Float,
+        val speed: Float,
+        val baseLum: Float,
+        val cosSin: FloatArray
+    )
+
+    private val diskRings: Array<DiskRing> by lazy {
+        val rings = ArrayList<DiskRing>()
         var rr = 1.9f
         while (rr < 5.2f) {
             val cnt = (rr * 60).toInt()
             val speed = 5f / (rr * sqrt(rr))
             val baseLum = (2f / rr).pow(1.2f)
+            val cs = FloatArray(cnt * 2)
             for (i in 0 until cnt) {
                 val th = i * TAU / cnt + rr * 7.13f
-                list.add(rr)
-                list.add(th)
-                list.add(speed)
-                list.add(baseLum)
+                cs[i * 2] = cos(th)
+                cs[i * 2 + 1] = sin(th)
             }
+            rings.add(DiskRing(rr, speed, baseLum, cs))
             rr += 0.06f
         }
-        list.toFloatArray()
+        rings.toTypedArray()
     }
 
     private fun blackHole(r: Raster, a: Float) {
@@ -142,20 +150,40 @@ object Scenes {
         for (k in 0 until 3) {
             val rad = 1.62f + k * 0.17f
             val cnt = (rad * 90).toInt()
+            val step = TAU / cnt
+            val cStep = cos(step)
+            val sStep = sin(step)
+            var cPh = 1f
+            var sPh = 0f
+            val baseBright = 0.95f - k * 0.25f
             for (i in 0 until cnt) {
-                val ph = i * TAU / cnt
-                r.pt(rad * cos(ph), rad * sin(ph), -0.3f, (0.95f - k * 0.25f) * (0.7f + 0.3f * sin(ph * 2f + a * 3f)))
+                val ph = i * step
+                val lum = baseBright * (0.7f + 0.3f * sin(ph * 2f + a * 3f))
+                r.pt(rad * cPh, rad * sPh, -0.3f, lum)
+                val nextC = cPh * cStep - sPh * sStep
+                sPh = sPh * cStep + cPh * sStep
+                cPh = nextC
             }
         }
         r.setRot(0f, -0.28f, 0f)
-        val d = disk
-        var k = 0
-        while (k < d.size) {
-            val rr = d[k]
-            val th = d[k + 1] + a * d[k + 2]
-            val lum = d[k + 3] * (0.75f + 0.25f * cos(th))
-            r.pt(rr * cos(th), 0f, rr * sin(th), lum)
-            k += 4
+        val rings = diskRings
+        for (ri in rings.indices) {
+            val ring = rings[ri]
+            val dth = a * ring.speed
+            val cd = cos(dth)
+            val sd = sin(dth)
+            val rr = ring.rr
+            val bLum = ring.baseLum
+            val cs = ring.cosSin
+            var k = 0
+            while (k < cs.size) {
+                val c0 = cs[k]
+                val s0 = cs[k + 1]
+                val cth = c0 * cd - s0 * sd
+                val sth = s0 * cd + c0 * sd
+                r.pt(rr * cth, 0f, rr * sth, bLum * (0.75f + 0.25f * cth))
+                k += 2
+            }
         }
     }
 
@@ -195,6 +223,41 @@ object Scenes {
         while (k < d.size) {
             r.pn(d[k], d[k + 1], d[k + 2], d[k + 3], d[k + 4], d[k + 5], 1f)
             k += 6
+        }
+    }
+
+    // ---------- Сфера Фибоначчи с гармонической пульсацией ----------
+    private val fibSphere: FloatArray by lazy {
+        val count = 960
+        val goldenAngle = 2.3999632f
+        val out = FloatArray(count * 4) // [x, y, z, azimuth]
+        var k = 0
+        for (i in 0 until count) {
+            val y = 1f - (i / (count - 1f)) * 2f
+            val rad = sqrt(max(0f, 1f - y * y))
+            val theta = goldenAngle * i
+            out[k++] = cos(theta) * rad
+            out[k++] = y
+            out[k++] = sin(theta) * rad
+            out[k++] = theta
+        }
+        out
+    }
+
+    private fun sphere(r: Raster, a: Float) {
+        r.setRot(a * 0.7f, 0.35f, a * 0.25f)
+        val d = fibSphere
+        var k = 0
+        while (k < d.size) {
+            val nx = d[k]
+            val ny = d[k + 1]
+            val nz = d[k + 2]
+            val az = d[k + 3]
+            val wave = sin(ny * 4.5f + a * 2.6f) * cos(az * 3f - a * 1.9f)
+            val rad = 1.38f + 0.22f * wave
+            val lum = (0.78f + 0.22f * wave).coerceIn(0.35f, 1f)
+            r.pn(nx * rad, ny * rad, nz * rad, nx, ny, nz, lum)
+            k += 4
         }
     }
 }
