@@ -11,6 +11,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.service.wallpaper.WallpaperService
@@ -28,91 +29,124 @@ class AsciiWallpaperService : WallpaperService() {
         private val session = AsciiSession(app)
         private val prefs = PreferenceManager.getDefaultSharedPreferences(app)
         private val choreo = Choreographer.getInstance()
-        private var visible = false
+        private var running = false
         private var w = 0
         private var h = 0
         private var last = 0L
         private var lowPower = false
-        private var lastPowerCheck = 0L
         private var tx = 0f
         private var ty = 0f
 
         private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             session.reload()
-            if (visible) { stopSensors(); startSensors() }
+            if (running) {
+                stopSensors()
+                startSensors()
+            }
         }
-        private val unlockRx = object : BroadcastReceiver() {
-            override fun onReceive(c: Context, i: Intent) { session.unlock() }
+
+        private val screenRx = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                when (i.action) {
+                    Intent.ACTION_SCREEN_OFF -> setRunning(false)
+                    Intent.ACTION_USER_PRESENT -> {
+                        session.unlock()
+                        if (isVisible) setRunning(true)
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        if (isVisible) setRunning(true)
+                    }
+                }
+            }
         }
 
         override fun onCreate(sh: SurfaceHolder) {
             super.onCreate(sh)
             setTouchEventsEnabled(true)
             prefs.registerOnSharedPreferenceChangeListener(prefListener)
-            ContextCompat.registerReceiver(app, unlockRx, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED)
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            }
+            ContextCompat.registerReceiver(app, screenRx, filter, ContextCompat.RECEIVER_EXPORTED)
         }
 
         override fun onDestroy() {
-            visible = false
-            choreo.removeFrameCallback(this)
-            stopSensors()
+            setRunning(false)
             prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
-            try { app.unregisterReceiver(unlockRx) } catch (_: Exception) {}
+            try {
+                app.unregisterReceiver(screenRx)
+            } catch (_: Exception) {}
             super.onDestroy()
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             super.onSurfaceChanged(holder, format, width, height)
-            w = width; h = height
+            w = width
+            h = height
             drawFrame(0f)
+            if (isVisible) setRunning(true)
         }
 
-       private fun isInteractive(): Boolean {
-           val pm = app.getSystemService(PowerManager::class.java)
-           return pm?.isInteractive ?: true
-       }
-       
-       override fun onVisibilityChanged(v: Boolean) {
-           val active = v && isInteractive()
-           if (visible == active) return
-           visible = active
-           choreo.removeFrameCallback(this)
-           if (active) {
-               session.reload()
-               checkPower()
-               last = 0L
-               startSensors()
-               choreo.postFrameCallback(this)
-           } else {
-               stopSensors()
-           }
-       }
-       
-       override fun doFrame(ns: Long) {
-           if (!visible || !isInteractive()) {
-               if (visible) onVisibilityChanged(false)
-               return
-           }
-           if (last == 0L) last = ns
-           val targetFps = session.effectiveFps(lowPower)
-           val interval = 1_000_000_000L / targetFps
-           val elapsed = ns - last
-       
-           if (elapsed >= interval - 2_000_000L) {
-               val dt = (elapsed / 1e9f).coerceAtMost(0.1f)
-               last = ns
-               drawFrame(dt)
-           }
-       
-           if (visible) {
-               choreo.postFrameCallback(this)
-           }
-       }
+        override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
+            super.onSurfaceRedrawNeeded(holder)
+            drawFrame(0f)
+            if (isVisible) setRunning(true)
+        }
+
+        override fun onVisibilityChanged(v: Boolean) {
+            super.onVisibilityChanged(v)
+            setRunning(v)
+        }
+
+        private fun setRunning(shouldRun: Boolean) {
+            if (running == shouldRun) {
+                if (shouldRun) {
+                    choreo.removeFrameCallback(this)
+                    choreo.postFrameCallback(this)
+                }
+                return
+            }
+            running = shouldRun
+            choreo.removeFrameCallback(this)
+            if (shouldRun) {
+                session.reload()
+                checkPower()
+                last = 0L
+                startSensors()
+                choreo.postFrameCallback(this)
+            } else {
+                stopSensors()
+            }
+        }
+
+        override fun doFrame(ns: Long) {
+            if (!running || !isVisible) {
+                if (running) setRunning(false)
+                return
+            }
+            if (last == 0L) last = ns
+            val targetFps = session.effectiveFps(lowPower)
+            val interval = 1_000_000_000L / targetFps
+            val elapsed = ns - last
+
+            if (elapsed >= interval - 2_000_000L) {
+                val dt = (elapsed / 1e9f).coerceAtMost(0.1f)
+                last = ns
+                drawFrame(dt)
+            }
+
+            if (running && isVisible) {
+                choreo.postFrameCallback(this)
+            }
+        }
 
         private fun drawFrame(dt: Float) {
+            if (w <= 0 || h <= 0) return
             var c: Canvas? = null
             try {
-                c = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                c = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     surfaceHolder.lockHardwareCanvas()
                 } else {
                     surfaceHolder.lockCanvas()
@@ -120,7 +154,11 @@ class AsciiWallpaperService : WallpaperService() {
                 if (c != null) session.frame(c, w, h, dt)
             } catch (_: Exception) {
             } finally {
-                if (c != null) try { surfaceHolder.unlockCanvasAndPost(c) } catch (_: Exception) {}
+                if (c != null) {
+                    try {
+                        surfaceHolder.unlockCanvasAndPost(c)
+                    } catch (_: Exception) {}
+                }
             }
         }
 
