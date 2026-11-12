@@ -28,7 +28,7 @@ class PreviewView(c: Context) : View(c) {
     private var measuredFps = 60
 
     init {
-        val radius = 16 * resources.displayMetrics.density
+        val radius = 18 * resources.displayMetrics.density
         outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(v: View, o: Outline) {
                 o.setRoundRect(0, 0, v.width, v.height, radius)
@@ -37,10 +37,13 @@ class PreviewView(c: Context) : View(c) {
         clipToOutline = true
     }
 
-    fun currentConfig(): Config = session.cfg
-
     fun reloadNow() {
         session.reload()
+        invalidate()
+    }
+
+    fun triggerChargeDemo() {
+        session.pulseCharge()
         invalidate()
     }
 
