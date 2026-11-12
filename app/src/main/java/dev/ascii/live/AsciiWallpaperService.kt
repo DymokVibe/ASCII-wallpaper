@@ -73,6 +73,10 @@ class AsciiWallpaperService : WallpaperService() {
                     Intent.ACTION_SCREEN_ON -> {
                         if (isVisible) setRunning(true)
                     }
+                    Intent.ACTION_POWER_CONNECTED -> {
+                        session.pulseCharge()
+                        if (isVisible) setRunning(true)
+                    }
                 }
             }
         }
@@ -90,11 +94,12 @@ class AsciiWallpaperService : WallpaperService() {
         override fun onComputeColors(): WallpaperColors? {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 val primary = Color.valueOf(session.cfg.color)
+                val secondary = Color.valueOf(session.cfg.highlightColor)
                 val bg = Color.valueOf(session.cfg.bg)
                 return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    WallpaperColors(primary, bg, primary, WallpaperColors.HINT_SUPPORTS_DARK_THEME)
+                    WallpaperColors(primary, secondary, bg, WallpaperColors.HINT_SUPPORTS_DARK_THEME)
                 } else {
-                    WallpaperColors(primary, bg, primary)
+                    WallpaperColors(primary, secondary, bg)
                 }
             }
             return super.onComputeColors()
@@ -109,6 +114,7 @@ class AsciiWallpaperService : WallpaperService() {
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_POWER_CONNECTED)
             }
             ContextCompat.registerReceiver(app, screenRx, filter, ContextCompat.RECEIVER_EXPORTED)
         }
