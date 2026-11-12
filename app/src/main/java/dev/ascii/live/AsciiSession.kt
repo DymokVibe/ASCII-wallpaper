@@ -5,11 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RSXform
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.os.Build
 import kotlin.math.*
 
 class AsciiSession(private val ctx: Context) {
@@ -46,14 +44,11 @@ class AsciiSession(private val ctx: Context) {
     private var cellW = 1f
     private var lineH = 1f
     private var aspect = 0.5f
-    private var atlasScale = 1f
 
     private var atlas: Bitmap? = null
     private var srcRects = emptyArray<Rect>()
     private var srcHiRects = emptyArray<Rect>()
     private val dstRect = RectF()
-    private var xformBuf: Array<RSXform> = emptyArray()
-    private var texBuf: Array<RectF> = emptyArray()
 
     private var xCoords = FloatArray(0)
     private var yCoords = FloatArray(0)
@@ -129,7 +124,7 @@ class AsciiSession(private val ctx: Context) {
         val screenTextSize = w / (cfg.cols * adv)
         paint.textSize = screenTextSize
         val fm = paint.fontMetrics
-        val screenAscent = fm.ascent
+        val atlasBaseline = -fm.ascent
         lineH = max(1f, fm.descent - fm.ascent)
         cellW = max(1f, w / cfg.cols.toFloat())
         rows = max(1, (h / lineH).toInt())
@@ -148,24 +143,13 @@ class AsciiSession(private val ctx: Context) {
         }
 
         val glyphW = max(1, ceil(cellW).toInt())
-        atlasScale = cellW / glyphW.toFloat()
-        val glyphH = max(1, round(lineH / atlasScale).toInt())
+        val glyphH = max(1, ceil(lineH).toInt())
         val rampLen = cfg.ramp.length
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (xformBuf.size != totalCells) {
-                xformBuf = Array(totalCells) { RSXform(atlasScale, 0f, 0f, 0f) }
-                texBuf = Array(totalCells) { RectF() }
-            }
-        }
 
         atlas?.recycle()
         val sheet = Bitmap.createBitmap(glyphW * rampLen, glyphH * 2, Bitmap.Config.ARGB_8888)
         sheet.eraseColor(Color.TRANSPARENT)
         val ac = Canvas(sheet)
-
-        paint.textSize = screenTextSize / atlasScale
-        val atlasBaseline = -screenAscent / atlasScale
 
         paint.color = cfg.color
         val rects = Array(rampLen) { i ->
@@ -237,75 +221,37 @@ class AsciiSession(private val ctx: Context) {
 
         val rects = srcRects
         val rectsHi = srcHiRects
+        val cw = cellW
+        val ch = lineH
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            var count = 0
-            val xf = xformBuf
-            val tx = texBuf
-            val sc = atlasScale
-            for (y in 0 until rows) {
-                val rowOffset = y * cols
-                val y0 = yCoords[y]
-                val rowWave = if (waveActive) {
-                    val dist = abs(y - waveRow)
-                    if (dist < waveWidth) (1f - dist / waveWidth) * 0.92f else 0f
-                } else {
-                    0f
-                }
-                for (x in 0 until cols) {
-                    val i = rowOffset + x
-                    val rawLum = if (z[i] == Float.MAX_VALUE) rowWave else max(l[i], rowWave)
-                    val lum = if (useTrail) {
-                        val v = max(rawLum, prevLum[i] * decay)
-                        prevLum[i] = if (v < 0.015f) 0f else v
-                        v
-                    } else {
-                        rawLum
-                    }
-
-                    if (lum >= 0.02f) {
-                        val clamped = lum.coerceAtMost(1f)
-                        val idxLum = 1 + min((clamped * rampScale).toInt(), maxRampIdx)
-                        xf[count].set(sc, 0f, xCoords[x], y0)
-                        tx[count].set(if (useDuotone && clamped > 0.80f) rectsHi[idxLum] else rects[idxLum])
-                        count++
-                    }
-                }
+        for (y in 0 until rows) {
+            val rowOffset = y * cols
+            val y0 = yCoords[y]
+            val y1 = y0 + ch
+            val rowWave = if (waveActive) {
+                val dist = abs(y - waveRow)
+                if (dist < waveWidth) (1f - dist / waveWidth) * 0.92f else 0f
+            } else {
+                0f
             }
-            if (count > 0) {
-                c.drawAtlas(sheet, xf, tx, null, 0, count, null, null)
-            }
-        } else {
-            val cw = cellW
-            val ch = lineH
-            for (y in 0 until rows) {
-                val rowOffset = y * cols
-                val y0 = yCoords[y]
-                val y1 = y0 + ch
-                val rowWave = if (waveActive) {
-                    val dist = abs(y - waveRow)
-                    if (dist < waveWidth) (1f - dist / waveWidth) * 0.92f else 0f
+            for (x in 0 until cols) {
+                val i = rowOffset + x
+                val rawLum = if (z[i] == Float.MAX_VALUE) rowWave else max(l[i], rowWave)
+                val lum = if (useTrail) {
+                    val v = max(rawLum, prevLum[i] * decay)
+                    prevLum[i] = if (v < 0.015f) 0f else v
+                    v
                 } else {
-                    0f
+                    rawLum
                 }
-                for (x in 0 until cols) {
-                    val i = rowOffset + x
-                    val rawLum = if (z[i] == Float.MAX_VALUE) rowWave else max(l[i], rowWave)
-                    val lum = if (useTrail) {
-                        val v = max(rawLum, prevLum[i] * decay)
-                        prevLum[i] = if (v < 0.015f) 0f else v
-                        v
-                    } else {
-                        rawLum
-                    }
 
-                    if (lum >= 0.02f) {
-                        val clamped = lum.coerceAtMost(1f)
-                        val idxLum = 1 + min((clamped * rampScale).toInt(), maxRampIdx)
-                        val x0 = xCoords[x]
-                        dstRect.set(x0, y0, x0 + cw, y1)
-                        c.drawBitmap(sheet, if (useDuotone && clamped > 0.80f) rectsHi[idxLum] else rects[idxLum], dstRect, null)
-                    }
+                if (lum >= 0.02f) {
+                    val clamped = lum.coerceAtMost(1f)
+                    val idxLum = 1 + min((clamped * rampScale).toInt(), maxRampIdx)
+                    val x0 = xCoords[x]
+                    dstRect.set(x0, y0, x0 + cw, y1)
+                    val src = if (useDuotone && clamped > 0.80f) rectsHi[idxLum] else rects[idxLum]
+                    c.drawBitmap(sheet, src, dstRect, null)
                 }
             }
         }
